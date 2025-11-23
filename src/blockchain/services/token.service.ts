@@ -5,15 +5,19 @@ import {
   getAccount,
   getAssociatedTokenAddress,
 } from '@solana/spl-token';
-import { USDC_MINT_PUBKEY } from '../constants/solana.constants';
+import {
+  SERVER_WALLET,
+  SOLANA_CONNECTION,
+  USDC_MINT_PUBKEY,
+} from '../constants/solana.constants';
 
 @Injectable()
 export class TokenService {
   private readonly logger = new Logger(TokenService.name);
 
   constructor(
-    @Inject('SOLANA_CONNECTION') private readonly connection: Connection,
-    @Inject('SERVER_WALLET') private readonly serverWallet: Keypair,
+    @Inject(SOLANA_CONNECTION) private readonly connection: Connection,
+    @Inject(SERVER_WALLET) private readonly serverWallet: Keypair,
   ) {}
 
   /**

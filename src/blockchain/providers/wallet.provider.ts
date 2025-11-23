@@ -1,14 +1,13 @@
 import { Keypair } from '@solana/web3.js';
 import { ConfigService } from '@nestjs/config';
+import { SERVER_WALLET } from '../constants/solana.constants';
+import { SolanaConfig } from 'src/config/configuration';
 
 export const WalletProvider = {
-  provide: 'SERVER_WALLET',
+  provide: SERVER_WALLET,
   useFactory: (configService: ConfigService) => {
-    const secretKey = configService.get<string>('solana.serverWalletSecretKey');
-
-    if (!secretKey) {
-      throw new Error('SERVER_WALLET_SECRET_KEY not configured');
-    }
+    const secretKey =
+      configService.getOrThrow<SolanaConfig>('solana').serverWalletSecretKey;
 
     const secretKeyBuffer = Buffer.from(secretKey, 'base64');
     return Keypair.fromSecretKey(secretKeyBuffer);

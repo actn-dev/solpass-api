@@ -5,14 +5,18 @@ import {
   sendAndConfirmTransaction,
   Transaction,
 } from '@solana/web3.js';
+import {
+  SERVER_WALLET,
+  SOLANA_CONNECTION,
+} from '../constants/solana.constants';
 
 @Injectable()
 export class SolanaService {
   private readonly logger = new Logger(SolanaService.name);
 
   constructor(
-    @Inject('SOLANA_CONNECTION') private readonly connection: Connection,
-    @Inject('SERVER_WALLET') private readonly serverWallet: Keypair,
+    @Inject(SOLANA_CONNECTION) private readonly connection: Connection,
+    @Inject(SERVER_WALLET) private readonly serverWallet: Keypair,
   ) {}
 
   getConnection(): Connection {
@@ -31,7 +35,7 @@ export class SolanaService {
     signers: Keypair[],
     maxRetries = 3,
   ): Promise<string> {
-    let lastError: Error;
+    let lastError: Error | undefined;
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
@@ -61,7 +65,7 @@ export class SolanaService {
     }
 
     throw new Error(
-      `Transaction failed after ${maxRetries} attempts: ${lastError.message}`,
+      `Transaction failed after ${maxRetries} attempts: ${lastError?.message || 'Unknown error'}`,
     );
   }
   /**

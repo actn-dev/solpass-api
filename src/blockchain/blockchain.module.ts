@@ -6,6 +6,7 @@ import { PdaService } from './services/pda.service';
 import { TransactionService } from './services/transaction.service';
 import { ConnectionProvider } from './providers/connection.provider';
 import { WalletProvider } from './providers/wallet.provider';
+import { SERVER_WALLET, SOLANA_CONNECTION } from './constants/solana.constants';
 
 @Module({
   imports: [ConfigModule],
@@ -22,8 +23,8 @@ import { WalletProvider } from './providers/wallet.provider';
   ],
   exports: [
     // Export for use in other modules
-    'SOLANA_CONNECTION',
-    'SERVER_WALLET',
+    SOLANA_CONNECTION,
+    SERVER_WALLET,
     SolanaService,
     TokenService,
     PdaService,
