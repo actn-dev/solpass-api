@@ -1,12 +1,4 @@
-import {
-  IsString,
-  Length,
-  Matches,
-  IsNumber,
-  IsDateString,
-  IsOptional,
-  Min,
-} from 'class-validator';
+import { IsString, Length, Matches, IsOptional } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateEventDto {
@@ -20,65 +12,58 @@ export class CreateEventDto {
 
   @ApiProperty({
     example: 'Rock Show',
-    description: 'Event name (max 10 chars)',
+    description: 'Event name (max 32 chars)',
   })
   @IsString()
-  @Length(1, 10)
+  @Length(1, 32)
   name: string;
+
+  @ApiProperty({
+    example: '2,2,10',
+    description:
+      'Comma-separated royalty percentages for parties (e.g., "2,2,10" means 2% to party1, 2% to party2, 10% to party3)',
+  })
+  @IsString()
+  @Matches(/^\d+(,\d+)*$/, {
+    message: 'Royalty must be comma-separated numbers (e.g., "2,2,10")',
+  })
+  royalty: string;
 
   @ApiPropertyOptional({
     example: 'Amazing rock concert',
-    description: 'Event description',
+    description: 'Event description (optional, stored off-chain)',
   })
   @IsString()
   @IsOptional()
   description?: string;
 
-  @ApiProperty({
-    example: '23,2,10',
-    description: 'Comma-separated royalty percentages for parties',
-  })
-  @IsString()
-  @Matches(/^\d+(,\d+)*$/, {
-    message: 'Royalty must be comma-separated numbers (e.g., "23,2,10")',
-  })
-  royalty: string;
-
   @ApiPropertyOptional({
     example: 'Madison Square Garden',
-    description: 'Event venue',
+    description: 'Event venue (optional, stored off-chain)',
   })
   @IsString()
   @IsOptional()
   venue?: string;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     example: '2025-12-31T20:00:00Z',
-    description: 'Event date in ISO format',
-  })
-  @IsDateString()
-  eventDate: string;
-
-  @ApiProperty({
-    example: 1000,
-    description: 'Total number of tickets available',
-  })
-  @IsNumber()
-  @Min(1)
-  totalTickets: number;
-
-  @ApiProperty({
-    example: 100,
-    description: 'Ticket price in USD (whole number)',
-  })
-  @IsNumber()
-  @Min(1)
-  ticketPrice: number;
-
-  @ApiProperty({
-    example: '7xKzU8fPPwV3wkF9YqGVXJb4qQZ3GqYvJ9Z3sV7wV7wV',
-    description: 'Authority wallet public key (base58)',
+    description: 'Event date (optional, stored off-chain)',
   })
   @IsString()
-  authority: string;
+  @IsOptional()
+  eventDate?: string;
+
+  @ApiPropertyOptional({
+    example: 1000,
+    description: 'Total tickets (optional, stored off-chain)',
+  })
+  @IsOptional()
+  totalTickets?: number;
+
+  @ApiPropertyOptional({
+    example: 100,
+    description: 'Ticket price (optional, stored off-chain)',
+  })
+  @IsOptional()
+  ticketPrice?: number;
 }

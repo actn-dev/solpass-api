@@ -69,13 +69,9 @@ export class DevTestController {
       const programId = new PublicKey(
         this.configService.get<string>('solana.programId')!,
       );
-      const authority = new PublicKey(
-        this.solanaService.getServerWalletAddress(),
-      );
 
       const [eventPda, bump] = this.pdaService.deriveEventPDA(
         programId,
-        authority,
         eventId,
       );
 
@@ -84,7 +80,6 @@ export class DevTestController {
         eventId,
         eventPda: eventPda.toBase58(),
         bump,
-        authority: authority.toBase58(),
         programId: programId.toBase58(),
       };
     } catch (error) {
@@ -107,15 +102,8 @@ export class DevTestController {
       const programId = new PublicKey(
         this.configService.get<string>('solana.programId')!,
       );
-      const authority = new PublicKey(
-        this.solanaService.getServerWalletAddress(),
-      );
 
-      const [eventPda] = this.pdaService.deriveEventPDA(
-        programId,
-        authority,
-        eventId,
-      );
+      const [eventPda] = this.pdaService.deriveEventPDA(programId, eventId);
       const [ticketPda, bump] = this.pdaService.deriveTicketPDA(
         programId,
         eventPda,

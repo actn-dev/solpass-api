@@ -37,24 +37,12 @@ export class TicketService {
     try {
       this.logger.log(`Creating event: ${dto.eventId}`);
 
-      // Convert authority string to PublicKey
-      const authority = new PublicKey(dto.authority);
-
-      // Convert eventDate to Date object
-      const eventDate = new Date(dto.eventDate);
-
-      // Call blockchain service
-      const { signature, eventPda } =
+      // Call blockchain service with only required on-chain parameters
+      const { signature, eventPda, eventKeypair } =
         await this.solanaTicketService.createEvent({
           eventId: dto.eventId,
           name: dto.name,
-          description: dto.description,
           royalty: dto.royalty,
-          venue: dto.venue,
-          eventDate,
-          totalTickets: dto.totalTickets,
-          ticketPrice: dto.ticketPrice,
-          authority,
         });
 
       // Wait for confirmation
@@ -72,12 +60,22 @@ export class TicketService {
         success: true,
         transactionSignature: signature,
         eventPda: eventPda.toBase58(),
+        eventKeypair,
         eventData: {
           eventId: dto.eventId,
           name: eventData?.name || dto.name,
-          authority: dto.authority,
+          royalty: eventData?.royalty || dto.royalty,
+          authority: eventData?.authority?.toBase58() || '',
           ticketsSold: eventData?.ticketsSold || 0,
           isActive: eventData?.isActive ?? true,
+        },
+        // Off-chain metadata (not stored on Solana)
+        metadata: {
+          description: dto.description,
+          venue: dto.venue,
+          eventDate: dto.eventDate,
+          totalTickets: dto.totalTickets,
+          ticketPrice: dto.ticketPrice,
         },
       };
     } catch (error) {
@@ -98,12 +96,8 @@ export class TicketService {
       );
 
       // Derive event PDA
-      const authority = new PublicKey(
-        this.solanaService.getServerWalletAddress(),
-      );
       const [eventPda] = this.pdaService.deriveEventPDA(
         this.programId,
-        authority,
         eventId,
       );
 
@@ -174,7 +168,6 @@ export class TicketService {
       // Derive event PDA
       const [eventPda] = this.pdaService.deriveEventPDA(
         this.programId,
-        authority,
         eventId,
       );
 
@@ -246,14 +239,9 @@ export class TicketService {
    */
   async getEvent(eventId: string) {
     try {
-      // For now, use server wallet as authority
-      // In production, you'd look this up from database
-      const authority = new PublicKey(
-        this.solanaService.getServerWalletAddress(),
-      );
+      // Derive event PDA
       const [eventPda] = this.pdaService.deriveEventPDA(
         this.programId,
-        authority,
         eventId,
       );
 
@@ -291,12 +279,8 @@ export class TicketService {
   async getTicket(eventId: string, ticketId: string) {
     try {
       // Derive event PDA
-      const authority = new PublicKey(
-        this.solanaService.getServerWalletAddress(),
-      );
       const [eventPda] = this.pdaService.deriveEventPDA(
         this.programId,
-        authority,
         eventId,
       );
 
@@ -340,12 +324,8 @@ export class TicketService {
    */
   async getEscrowBalance(eventId: string) {
     try {
-      const authority = new PublicKey(
-        this.solanaService.getServerWalletAddress(),
-      );
       const [eventPda] = this.pdaService.deriveEventPDA(
         this.programId,
-        authority,
         eventId,
       );
 

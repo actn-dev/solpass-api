@@ -64,52 +64,47 @@ export class SolanaTicketService {
   async createEvent(params: {
     eventId: string;
     name: string;
-    description?: string;
     royalty: string;
-    venue?: string;
-    eventDate: Date;
-    totalTickets: number;
-    ticketPrice: number;
-    authority: PublicKey;
-  }): Promise<{ signature: string; eventPda: PublicKey }> {
+  }): Promise<{
+    signature: string;
+    eventPda: PublicKey;
+    eventKeypair: { publicKey: string; privateKey: string };
+  }> {
     try {
       this.logger.log(`Creating event: ${params.eventId}`);
+
+      // Generate a new keypair for the event
+      const newKeypair = Keypair.generate();
+      const publicKey = newKeypair.publicKey.toBase58();
+      const privateKey = Buffer.from(newKeypair.secretKey).toString('base64');
 
       // Derive event PDA
       const [eventPda] = this.pdaService.deriveEventPDA(
         this.programId,
-        params.authority,
         params.eventId,
       );
 
-      // Convert date to timestamp
-      const eventTimestamp = new BN(
-        Math.floor(params.eventDate.getTime() / 1000),
-      );
-
-      // Call createEvent instruction
+      // Call createEvent instruction (only 3 params: eventId, name, royalty)
       // @ts-ignore
       const signature = await this.program.methods
-        .createEvent(
-          params.eventId,
-          params.name,
-          params.description || 'No description',
-          params.royalty,
-          params.venue || 'No venue',
-          eventTimestamp,
-          new BN(params.totalTickets),
-          new BN(params.ticketPrice),
-        )
+        .createEvent(params.eventId, params.name, params.royalty)
         .accounts({
           eventAccount: eventPda,
-          authority: params.authority,
+          authority: this.serverWallet.publicKey,
           systemProgram: SystemProgram.programId,
         })
         .rpc();
 
       this.logger.log(`Event created: ${signature}`);
 
-      return { signature, eventPda };
+      return {
+        signature,
+        eventPda,
+        eventKeypair: {
+          publicKey,
+          privateKey,
+        },
+      };
     } catch (error) {
       this.logger.error('Error creating event:', error);
       throw new Error(

@@ -8,13 +8,9 @@ export class PdaService {
    * Derive event PDA
    * From your deriveEventPDA function
    */
-  deriveEventPDA(
-    programId: PublicKey,
-    authority: PublicKey,
-    eventId: string,
-  ): [PublicKey, number] {
+  deriveEventPDA(programId: PublicKey, eventId: string): [PublicKey, number] {
     return PublicKey.findProgramAddressSync(
-      [Buffer.from('EVENT_STATE'), authority.toBuffer(), Buffer.from(eventId)],
+      [Buffer.from('EVENT_STATE'), Buffer.from(eventId)],
       programId,
     );
   }
