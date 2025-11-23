@@ -1,16 +1,14 @@
 import { Keypair } from '@solana/web3.js';
-import { ConfigService } from '@nestjs/config';
+import { ConfigType } from '@nestjs/config';
 import { SERVER_WALLET } from '../constants/solana.constants';
-import { SolanaConfig } from 'src/config/configuration';
+import { solanaConfig } from '../../config/solana.config';
 
 export const WalletProvider = {
   provide: SERVER_WALLET,
-  useFactory: (configService: ConfigService) => {
-    const secretKey =
-      configService.getOrThrow<SolanaConfig>('solana').serverWalletSecretKey;
-
+  useFactory: (config: ConfigType<typeof solanaConfig>) => {
+    const secretKey = config.serverWalletSecretKey;
     const secretKeyBuffer = Buffer.from(secretKey, 'base64');
     return Keypair.fromSecretKey(secretKeyBuffer);
   },
-  inject: [ConfigService],
+  inject: [solanaConfig.KEY],
 };

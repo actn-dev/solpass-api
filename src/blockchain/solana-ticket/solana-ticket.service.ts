@@ -1,6 +1,5 @@
 import { AnchorProvider, BN, Program, Wallet } from '@coral-xyz/anchor';
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import {
   ASSOCIATED_TOKEN_PROGRAM_ID,
   getAssociatedTokenAddress,
@@ -16,7 +15,8 @@ import {
   SOLANA_CONNECTION,
   USDC_MINT_PUBKEY,
 } from 'src/blockchain/constants/solana.constants';
-import { SolanaConfig } from 'src/config/configuration';
+import { solanaConfig } from 'src/config/solana.config';
+import type { ConfigType } from '@nestjs/config';
 
 @Injectable()
 export class SolanaTicketService {
@@ -31,10 +31,10 @@ export class SolanaTicketService {
     private readonly solanaService: SolanaService,
     private readonly pdaService: PdaService,
     private readonly tokenService: TokenService,
-    private readonly configService: ConfigService,
+    @Inject(solanaConfig.KEY)
+    config: ConfigType<typeof solanaConfig>,
   ) {
-    const solanaConfig = this.configService.getOrThrow<SolanaConfig>('solana');
-    this.programId = new PublicKey(solanaConfig.programId);
+    this.programId = new PublicKey(config.programId);
     this.usdcMint = new PublicKey(USDC_MINT_PUBKEY);
     this.initializeProgram();
   }

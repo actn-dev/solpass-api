@@ -3,15 +3,16 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Inject,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { PublicKey } from '@solana/web3.js';
-import { SolanaConfig } from '../config/configuration';
 import { PdaService } from '../blockchain/services/pda.service';
 import { SolanaService } from '../blockchain/services/solana.service';
 import { SolanaTicketService } from '../blockchain/solana-ticket/solana-ticket.service';
 import { EventsService } from '../events/events.service';
 import { CreateTicketDto } from './dto/create-ticket.dto';
+import { solanaConfig } from '../config/solana.config';
+import type { ConfigType } from '@nestjs/config';
 
 @Injectable()
 export class TicketsService {
@@ -22,12 +23,11 @@ export class TicketsService {
     private readonly solanaTicketService: SolanaTicketService,
     private readonly solanaService: SolanaService,
     private readonly pdaService: PdaService,
-    private readonly configService: ConfigService,
     private readonly eventsService: EventsService,
+    @Inject(solanaConfig.KEY)
+    config: ConfigType<typeof solanaConfig>,
   ) {
-    this.programId = new PublicKey(
-      this.configService.getOrThrow<SolanaConfig>('solana').programId,
-    );
+    this.programId = new PublicKey(config.programId);
   }
 
   /**
