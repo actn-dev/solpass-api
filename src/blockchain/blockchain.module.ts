@@ -4,6 +4,7 @@ import { SolanaService } from './services/solana.service';
 import { TokenService } from './services/token.service';
 import { PdaService } from './services/pda.service';
 import { TransactionService } from './services/transaction.service';
+import { SolanaTicketService } from './solana-ticket/solana-ticket.service';
 import { ConnectionProvider } from './providers/connection.provider';
 import { WalletProvider } from './providers/wallet.provider';
 import { SERVER_WALLET, SOLANA_CONNECTION } from './constants/solana.constants';
@@ -20,6 +21,7 @@ import { SERVER_WALLET, SOLANA_CONNECTION } from './constants/solana.constants';
     TokenService,
     PdaService,
     TransactionService,
+    SolanaTicketService,
   ],
   exports: [
     // Export for use in other modules
@@ -29,6 +31,7 @@ import { SERVER_WALLET, SOLANA_CONNECTION } from './constants/solana.constants';
     TokenService,
     PdaService,
     TransactionService,
+    SolanaTicketService,
   ],
 })
 export class BlockchainModule {}
