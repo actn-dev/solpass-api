@@ -17,6 +17,7 @@ import {
 } from 'src/blockchain/constants/solana.constants';
 import { solanaConfig } from 'src/config/solana.config';
 import type { ConfigType } from '@nestjs/config';
+import { NodeWallet } from './node-wallete';
 
 @Injectable()
 export class SolanaTicketService {
@@ -44,7 +45,7 @@ export class SolanaTicketService {
    */
   private initializeProgram() {
     try {
-      const wallet = new Wallet(this.serverWallet);
+      const wallet = new NodeWallet(this.serverWallet);
       const provider = new AnchorProvider(this.connection, wallet, {
         commitment: 'confirmed',
         preflightCommitment: 'confirmed',

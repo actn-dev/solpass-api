@@ -23,8 +23,19 @@ async function bootstrap() {
     .setTitle('Solpass Ticket API')
     .setDescription('RESTful API for Solana-based ticket management')
     .setVersion('1.0')
+    .addTag('Events')
+    .addTag('Tickets')
+    .addTag('Auth')
     .addTag('Ticket Operations')
     .addTag('Development & Testing')
+    .addBearerAuth({
+      type: 'http',
+      scheme: 'bearer',
+      bearerFormat: 'JWT',
+      name: 'JWT',
+      description: 'Enter JWT token',
+      in: 'header',
+    })
     .build();
 
   const document = SwaggerModule.createDocument(app, config);

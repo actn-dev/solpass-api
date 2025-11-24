@@ -1,16 +1,21 @@
-import { Injectable } from '@nestjs/common';
-import { PublicKey } from '@solana/web3.js';
-import * as anchor from '@coral-xyz/anchor';
+import { Inject, Injectable } from '@nestjs/common';
+import { Keypair, PublicKey } from '@solana/web3.js';
+import { SERVER_WALLET } from '../constants/solana.constants';
 
 @Injectable()
 export class PdaService {
+  constructor(@Inject(SERVER_WALLET) private readonly serverWallet: Keypair) {}
   /**
    * Derive event PDA
    * From your deriveEventPDA function
    */
   deriveEventPDA(programId: PublicKey, eventId: string): [PublicKey, number] {
     return PublicKey.findProgramAddressSync(
-      [Buffer.from('EVENT_STATE'), Buffer.from(eventId)],
+      [
+        Buffer.from('EVENT_STATE'),
+        this.serverWallet.publicKey.toBuffer(),
+        Buffer.from(eventId),
+      ],
       programId,
     );
   }

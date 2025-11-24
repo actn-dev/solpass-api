@@ -1,5 +1,38 @@
-import { IsString, Length, Matches, IsOptional } from 'class-validator';
+import {
+  IsString,
+  Length,
+  IsOptional,
+  IsNumber,
+  IsDateString,
+  Min,
+  Max,
+  IsArray,
+  ValidateNested,
+  ArrayMinSize,
+} from 'class-validator';
+import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { RoyaltyPartner } from '../entities/event.entity';
+
+export class RoyaltyPartnerDto implements RoyaltyPartner {
+  @ApiProperty({ example: 'Artist', description: 'Party name' })
+  @IsString()
+  partyName: string;
+
+  @ApiProperty({ example: 5, description: 'Percentage (0-100)' })
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  percentage: number;
+
+  @ApiPropertyOptional({
+    example: 'So1ana...wallet',
+    description: 'Solana wallet address',
+  })
+  @IsString()
+  @IsOptional()
+  walletAddress?: string;
+}
 
 export class CreateEventDto {
   @ApiProperty({
@@ -19,51 +52,53 @@ export class CreateEventDto {
   name: string;
 
   @ApiProperty({
-    example: '2,2,10',
-    description:
-      'Comma-separated royalty percentages for parties (e.g., "2,2,10" means 2% to party1, 2% to party2, 10% to party3)',
-  })
-  @IsString()
-  @Matches(/^\d+(,\d+)*$/, {
-    message: 'Royalty must be comma-separated numbers (e.g., "2,2,10")',
-  })
-  royalty: string;
-
-  @ApiPropertyOptional({
     example: 'Amazing rock concert',
-    description: 'Event description (optional, stored off-chain)',
+    description: 'Event description',
   })
   @IsString()
-  @IsOptional()
-  description?: string;
+  description: string;
 
-  @ApiPropertyOptional({
+  @ApiProperty({
     example: 'Madison Square Garden',
-    description: 'Event venue (optional, stored off-chain)',
+    description: 'Event venue',
   })
   @IsString()
-  @IsOptional()
-  venue?: string;
+  venue: string;
 
-  @ApiPropertyOptional({
+  @ApiProperty({
     example: '2025-12-31T20:00:00Z',
-    description: 'Event date (optional, stored off-chain)',
+    description: 'Event date in ISO format',
   })
-  @IsString()
-  @IsOptional()
-  eventDate?: string;
+  @IsDateString()
+  eventDate: string;
 
-  @ApiPropertyOptional({
+  @ApiProperty({
     example: 1000,
-    description: 'Total tickets (optional, stored off-chain)',
+    description: 'Total number of tickets available',
   })
-  @IsOptional()
-  totalTickets?: number;
+  @IsNumber()
+  @Min(1)
+  totalTickets: number;
 
-  @ApiPropertyOptional({
+  @ApiProperty({
     example: 100,
-    description: 'Ticket price (optional, stored off-chain)',
+    description: 'Ticket price in smallest currency unit',
   })
-  @IsOptional()
-  ticketPrice?: number;
+  @IsNumber()
+  @Min(0)
+  ticketPrice: number;
+
+  @ApiProperty({
+    example: [
+      { partyName: 'Artist', percentage: 5 },
+      { partyName: 'Venue', percentage: 3 },
+    ],
+    description: 'Royalty distribution among parties',
+    type: [RoyaltyPartnerDto],
+  })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => RoyaltyPartnerDto)
+  @ArrayMinSize(1)
+  royaltyDistribution: RoyaltyPartnerDto[];
 }

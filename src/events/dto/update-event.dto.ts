@@ -1,4 +1,12 @@
-import { PartialType } from '@nestjs/swagger';
+import { PartialType, OmitType } from '@nestjs/swagger';
 import { CreateEventDto } from './create-event.dto';
 
-export class UpdateEventDto extends PartialType(CreateEventDto) {}
+// Cannot update eventId, totalTickets, ticketPrice, royaltyDistribution after creation
+export class UpdateEventDto extends PartialType(
+  OmitType(CreateEventDto, [
+    'eventId',
+    'totalTickets',
+    'ticketPrice',
+    'royaltyDistribution',
+  ] as const),
+) {}
