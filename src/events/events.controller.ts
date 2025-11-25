@@ -137,7 +137,12 @@ export class EventsController {
   @UseGuards(JwtAuthGuard, EventOwnerGuard)
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Distribute royalties to party wallets' })
+  @ApiOperation({
+    summary:
+      'Distribute royalties to party wallets (partners extracted from event.royaltyDistribution)',
+    description:
+      'No request body needed. Partners and their wallet addresses are automatically extracted from the event database. All partners must have USDC token accounts enabled first.',
+  })
   @ApiParam({ name: 'id', description: 'Event UUID' })
   @ApiResponse({
     status: 200,
@@ -145,7 +150,8 @@ export class EventsController {
   })
   @ApiResponse({
     status: 400,
-    description: 'Bad request or already distributed',
+    description:
+      'Bad request - already distributed, no royalties, or partners missing USDC accounts',
   })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   @ApiResponse({ status: 403, description: 'Forbidden - not event owner' })
@@ -169,5 +175,29 @@ export class EventsController {
   @ApiResponse({ status: 404, description: 'Event not found' })
   async getEscrowBalance(@Param('id') id: string, @Request() req) {
     return this.eventsService.getEscrowBalance(id, req.user.userId);
+  }
+
+  @Post(':id/enable-partner-usdc')
+  @UseGuards(JwtAuthGuard, EventOwnerGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'Enable USDC token accounts for all partners (server wallet pays for creation)',
+  })
+  @ApiParam({ name: 'id', description: 'Event UUID' })
+  @ApiResponse({
+    status: 200,
+    description: 'USDC accounts enabled for partners',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Bad request - partners missing wallet addresses',
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 403, description: 'Forbidden - not event owner' })
+  @ApiResponse({ status: 404, description: 'Event not found' })
+  async enablePartnerUsdcAccounts(@Param('id') id: string, @Request() req) {
+    return this.eventsService.enablePartnerUsdcAccounts(id, req.user.userId);
   }
 }

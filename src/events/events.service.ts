@@ -1,24 +1,25 @@
 import {
   BadRequestException,
+  Inject,
   Injectable,
+  InternalServerErrorException,
   Logger,
   NotFoundException,
-  Inject,
-  InternalServerErrorException,
 } from '@nestjs/common';
+import type { ConfigType } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Like, MoreThanOrEqual } from 'typeorm';
 import { PublicKey } from '@solana/web3.js';
+import { User } from 'src/users/entities/user.entity';
+import { Repository } from 'typeorm';
 import { PdaService } from '../blockchain/services/pda.service';
 import { SolanaService } from '../blockchain/services/solana.service';
 import { SolanaTicketService } from '../blockchain/solana-ticket/solana-ticket.service';
-import { CreateEventDto } from './dto/create-event.dto';
-import { UpdateEventDto } from './dto/update-event.dto';
-import { QueryEventsDto } from './dto/query-events.dto';
-import { DistributeRoyaltyDto } from './dto/distribute-royalty.dto';
-import { Event } from './entities/event.entity';
 import { solanaConfig } from '../config/solana.config';
-import type { ConfigType } from '@nestjs/config';
+import { CreateEventDto } from './dto/create-event.dto';
+import { DistributeRoyaltyDto } from './dto/distribute-royalty.dto';
+import { QueryEventsDto } from './dto/query-events.dto';
+import { UpdateEventDto } from './dto/update-event.dto';
+import { Event } from './entities/event.entity';
 
 @Injectable()
 export class EventsService {
@@ -35,6 +36,21 @@ export class EventsService {
     config: ConfigType<typeof solanaConfig>,
   ) {
     this.programId = new PublicKey(config.programId);
+  }
+
+  /**
+   * Sanitize event data by removing sensitive fields
+   */
+  private sanitizeEvent(event: Event): Partial<Event> {
+    const { eventSecretKey, ...sanitized } = event;
+
+    // Remove sensitive partner data if loaded
+    if (sanitized.partner) {
+      const { password, apiKey, ...partnerData } = sanitized.partner as any;
+      sanitized.partner = partnerData as User;
+    }
+
+    return sanitized;
   }
 
   /**
@@ -89,7 +105,7 @@ export class EventsService {
         `Event created successfully: ${savedEvent.id} (blockchain not initialized)`,
       );
 
-      return savedEvent;
+      return this.sanitizeEvent(savedEvent);
     } catch (error) {
       this.logger.error('Error creating event:', error);
       if (error instanceof BadRequestException) {
@@ -180,9 +196,10 @@ export class EventsService {
         `Blockchain initialized successfully for event: ${eventId}`,
       );
 
-      return await this.eventRepository.findOne({
+      const updatedEvent = await this.eventRepository.findOne({
         where: { id: event.eventId },
       });
+      return updatedEvent ? this.sanitizeEvent(updatedEvent) : null;
     } catch (error) {
       this.logger.error('Error initializing blockchain:', error);
 
@@ -227,7 +244,7 @@ export class EventsService {
       throw new NotFoundException('Event not found');
     }
 
-    return event;
+    return this.sanitizeEvent(event);
   }
 
   /**
@@ -243,7 +260,7 @@ export class EventsService {
       throw new NotFoundException(`Event with eventId ${eventId} not found`);
     }
 
-    return event;
+    return this.sanitizeEvent(event);
   }
 
   /**
@@ -296,7 +313,7 @@ export class EventsService {
     const [events, total] = await queryBuilder.getManyAndCount();
 
     return {
-      data: events,
+      data: events.map((event) => this.sanitizeEvent(event)),
       meta: {
         page,
         limit,
@@ -310,7 +327,9 @@ export class EventsService {
    * Update event details (only allowed fields)
    */
   async update(eventId: string, dto: UpdateEventDto, userId: string) {
-    const event = await this.findOne(eventId);
+    const event = await this.eventRepository.findOneOrFail({
+      where: { eventId },
+    });
 
     // Verify ownership
     if (event.partnerId !== userId) {
@@ -319,14 +338,44 @@ export class EventsService {
       );
     }
 
-    // If blockchain is enabled, only allow updating description and venue
+    // If blockchain is enabled, restrict updates
     if (event.blockchainEnabled) {
-      const { name, eventDate, ...allowedFields } = dto;
+      const { name, eventDate, royaltyDistribution, ...allowedFields } = dto;
+
+      // Cannot update name or eventDate after blockchain init
       if (name || eventDate) {
         throw new BadRequestException(
           'Cannot update name or eventDate for blockchain-enabled events',
         );
       }
+
+      // Allow royaltyDistribution updates only for wallet addresses
+      if (royaltyDistribution) {
+        if (
+          !event.royaltyDistribution ||
+          event.royaltyDistribution.length === 0
+        ) {
+          throw new BadRequestException('Event has no partners configured');
+        }
+
+        // Update wallet addresses based on party name matching
+        for (const update of royaltyDistribution) {
+          const existingPartner = event.royaltyDistribution.find(
+            (p) => p.partyName === update.partyName,
+          );
+
+          if (!existingPartner) {
+            throw new BadRequestException(
+              `Partner '${update.partyName}' not found in event configuration`,
+            );
+          }
+
+          // Update only the wallet address
+          existingPartner.walletAddress = update.walletAddress;
+        }
+      }
+
+      // Apply other allowed fields (description, venue)
       Object.assign(event, allowedFields);
     } else {
       // Before blockchain initialization, allow updating everything except eventId
@@ -336,14 +385,17 @@ export class EventsService {
       }
     }
 
-    return await this.eventRepository.save(event);
+    const savedEvent = await this.eventRepository.save(event);
+    return this.sanitizeEvent(savedEvent);
   }
 
   /**
    * Soft delete event
    */
   async remove(eventId: string, userId: string) {
-    const event = await this.findOne(eventId);
+    const event = await this.eventRepository.findOneOrFail({
+      where: { eventId },
+    });
 
     // Verify ownership
     if (event.partnerId !== userId) {
@@ -352,14 +404,32 @@ export class EventsService {
       );
     }
 
-    // Cannot delete blockchain-enabled events
-    if (event.blockchainEnabled) {
+    // Cannot delete events that have been initialized on blockchain
+    if (event.blockchainInitializedAt || event.blockchainEnabled) {
       throw new BadRequestException(
-        'Cannot delete blockchain-enabled events. Contact support for assistance.',
+        'Cannot delete blockchain-initialized events. The event has been recorded on-chain and cannot be removed. Contact support if you need to deactivate this event.',
       );
     }
 
-    // TODO: Check if any tickets sold before allowing deletion
+    // Check if any tickets exist (even if blockchain not initialized)
+    if (event.blockchainEnabled && event.eventPda) {
+      try {
+        const eventPda = new PublicKey(event.eventPda);
+        const tickets =
+          await this.solanaTicketService.getEventTickets(eventPda);
+
+        if (tickets.length > 0) {
+          throw new BadRequestException(
+            `Cannot delete event with ${tickets.length} ticket(s) sold. Contact support for assistance.`,
+          );
+        }
+      } catch (error) {
+        // If we can't check tickets, still block deletion if blockchain was enabled
+        this.logger.warn(
+          `Could not check tickets for event ${eventId}: ${error}`,
+        );
+      }
+    }
 
     await this.eventRepository.softRemove(event);
 
@@ -399,7 +469,8 @@ export class EventsService {
 
         if (eventData) {
           stats.ticketsSold = eventData.ticketsSold;
-          stats.ticketsRemaining = event.totalTickets - eventData.ticketsSold;
+          stats.ticketsRemaining =
+            event.totalTickets ?? 0 - eventData.ticketsSold;
           stats.onChainData = {
             isActive: eventData.isActive,
             royaltyDistributed: eventData.royaltyDistributed,
@@ -468,8 +539,55 @@ export class EventsService {
         throw new BadRequestException('Event not initialized on blockchain');
       }
 
+      // Extract party wallet addresses from royaltyDistribution
+      if (
+        !event.royaltyDistribution ||
+        event.royaltyDistribution.length === 0
+      ) {
+        throw new BadRequestException(
+          'No royalty partners configured for this event',
+        );
+      }
+
+      const partyWalletAddresses: string[] = [];
+      const partnersWithoutWallets: string[] = [];
+
+      for (const partner of event.royaltyDistribution) {
+        if (!partner.walletAddress) {
+          partnersWithoutWallets.push(partner.partyName);
+        } else {
+          partyWalletAddresses.push(partner.walletAddress);
+        }
+      }
+
+      if (partnersWithoutWallets.length > 0) {
+        throw new BadRequestException(
+          `Partners missing wallet addresses: ${partnersWithoutWallets.join(', ')}`,
+        );
+      }
+
+      this.logger.log(`Party wallets: ${partyWalletAddresses.join(', ')}`);
+
+      // Validate all partners have USDC accounts
+      const validation =
+        await this.validatePartyUsdcAccounts(partyWalletAddresses);
+
+      if (!validation.valid) {
+        throw new BadRequestException(
+          `The following partners do not have USDC token accounts: ${validation.missingAccounts
+            .map((addr) => {
+              const partner = event.royaltyDistribution?.find(
+                (p) => p.walletAddress === addr,
+              );
+              return `${partner?.partyName || 'Unknown'} (${addr})`;
+            })
+            .join(
+              ', ',
+            )}. Please enable USDC accounts first using POST /events/${eventId ?? 'd'}/enable-partner-usdc`,
+        );
+      }
+
       const eventPda = new PublicKey(event.eventPda);
-      const authority = new PublicKey(dto.authority);
 
       // Check if event exists on-chain
       const eventData =
@@ -478,17 +596,22 @@ export class EventsService {
         throw new NotFoundException(`Event not found on blockchain`);
       }
 
-      // Verify authority matches event creator
-      if (eventData.authority.toBase58() !== dto.authority) {
-        throw new BadRequestException(
-          'Authority mismatch: not the event creator',
-        );
-      }
-
       // Check if already distributed
       if (eventData.royaltyDistributed) {
         throw new BadRequestException(
           'Royalties already distributed for this event',
+        );
+      }
+
+      // Parse and validate royalty percentages match partner count
+      const royaltyPercentages = eventData.royalty
+        .split(',')
+        .map((pct: string) => parseInt(pct.trim()))
+        .filter((pct: number) => !isNaN(pct));
+
+      if (royaltyPercentages.length !== partyWalletAddresses.length) {
+        throw new BadRequestException(
+          `Royalty distribution mismatch: ${royaltyPercentages.length} percentages on-chain but ${partyWalletAddresses.length} partners in database`,
         );
       }
 
@@ -501,12 +624,12 @@ export class EventsService {
         );
       }
 
-      // Call blockchain service
+      // Call blockchain service - use server wallet as authority (it created the event)
       const { signature, distributedAmounts } =
         await this.solanaTicketService.distributeRoyalty({
           eventPda,
-          authority,
-          partyWalletAddresses: dto.partyAddresses,
+          authority: eventData.authority, // Use the authority from on-chain event
+          partyWalletAddresses,
         });
 
       // Wait for confirmation
@@ -523,16 +646,21 @@ export class EventsService {
       blockchainEvents.push({
         eventType: 'royalty_distributed',
         txHash: signature,
-        walletAddress: dto.authority,
+        walletAddress: eventData.authority.toBase58(),
         eventData: {
           totalAmount: escrowBalance,
-          partyAddresses: dto.partyAddresses,
+          partyAddresses: partyWalletAddresses,
           distributedAmounts,
         },
         timestamp: Date.now(),
       });
 
-      await this.eventRepository.update(event.id, { blockchainEvents });
+      const event_id = event.id;
+
+      if (!event_id)
+        throw new InternalServerErrorException('Event ID is missing');
+
+      await this.eventRepository.update(event_id, { blockchainEvents });
 
       return {
         success: true,
@@ -540,7 +668,7 @@ export class EventsService {
         eventPda: eventPda.toBase58(),
         distribution: {
           totalAmount: escrowBalance,
-          partyAddresses: dto.partyAddresses,
+          partyAddresses: partyWalletAddresses,
           distributedAmounts,
         },
       };
@@ -554,6 +682,142 @@ export class EventsService {
       }
       throw new InternalServerErrorException(
         `Failed to distribute royalties: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
+    }
+  }
+
+  /**
+   * Validate that all party wallets have USDC token accounts
+   */
+  private async validatePartyUsdcAccounts(
+    walletAddresses: string[],
+  ): Promise<{ valid: boolean; missingAccounts: string[] }> {
+    const missingAccounts: string[] = [];
+
+    for (const address of walletAddresses) {
+      try {
+        const walletPubkey = new PublicKey(address);
+        const hasAccount =
+          await this.solanaTicketService.checkUsdcAccountExists(walletPubkey);
+
+        if (!hasAccount) {
+          missingAccounts.push(address);
+        }
+      } catch (error) {
+        this.logger.error(
+          `Error checking USDC account for ${address}: ${error}`,
+        );
+        missingAccounts.push(address);
+      }
+    }
+
+    return {
+      valid: missingAccounts.length === 0,
+      missingAccounts,
+    };
+  }
+
+  /**
+   * Enable USDC token accounts for all partners of an event
+   */
+  async enablePartnerUsdcAccounts(eventId: string, userId: string) {
+    try {
+      this.logger.log(`Enabling partner USDC accounts for event: ${eventId}`);
+
+      const event = await this.findOne(eventId);
+
+      // Verify ownership
+      if (event.partnerId !== userId) {
+        throw new BadRequestException(
+          'You do not have permission to manage this event',
+        );
+      }
+
+      if (
+        !event.royaltyDistribution ||
+        event.royaltyDistribution.length === 0
+      ) {
+        throw new BadRequestException(
+          'No royalty partners configured for this event',
+        );
+      }
+
+      // Extract wallet addresses
+      const partnersWithoutWallets: string[] = [];
+      const partnersToEnable: Array<{
+        partyName: string;
+        walletAddress: string;
+      }> = [];
+
+      for (const partner of event.royaltyDistribution) {
+        if (!partner.walletAddress) {
+          partnersWithoutWallets.push(partner.partyName);
+        } else {
+          partnersToEnable.push({
+            partyName: partner.partyName,
+            walletAddress: partner.walletAddress,
+          });
+        }
+      }
+
+      if (partnersWithoutWallets.length > 0) {
+        throw new BadRequestException(
+          `Partners missing wallet addresses: ${partnersWithoutWallets.join(', ')}. Please update partner wallet addresses first.`,
+        );
+      }
+
+      // Enable USDC accounts for each partner
+      const results: Array<{
+        partyName: string;
+        walletAddress: string;
+        success: boolean;
+        accountAddress?: string;
+        created?: boolean;
+        transactionSignature?: string;
+        error?: string;
+      }> = [];
+
+      for (const partner of partnersToEnable) {
+        try {
+          const walletPubkey = new PublicKey(partner.walletAddress);
+          const result =
+            await this.solanaTicketService.createUsdcAccountIfNeeded(
+              walletPubkey,
+            );
+
+          results.push({
+            partyName: partner.partyName,
+            walletAddress: partner.walletAddress,
+            ...result,
+          });
+        } catch (error) {
+          results.push({
+            partyName: partner.partyName,
+            walletAddress: partner.walletAddress,
+            success: false,
+            error: error instanceof Error ? error.message : 'Unknown error',
+          });
+        }
+      }
+
+      const successCount = results.filter((r) => r.success).length;
+      const failedCount = results.length - successCount;
+
+      return {
+        success: failedCount === 0,
+        message: `Successfully enabled ${successCount}/${results.length} USDC accounts`,
+        results,
+      };
+    } catch (error) {
+      this.logger.error('Error enabling partner USDC accounts:', error);
+      if (
+        error instanceof BadRequestException ||
+        error instanceof NotFoundException
+      ) {
+        throw error;
+      }
+      throw new InternalServerErrorException(
+        `Failed to enable USDC accounts: ${error instanceof Error ? error.message : 'Unknown error'}`,
       );
     }
   }

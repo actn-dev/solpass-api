@@ -15,13 +15,13 @@ export class User {
   @Column({ unique: true })
   email: string;
 
-  @Column()
+  @Column({ select: false })
   password: string;
 
   @Column({ unique: true })
   walletAddress: string;
 
-  @Column({ nullable: true, unique: true })
+  @Column({ nullable: true, unique: true, select: false })
   apiKey: string;
 
   @Column({ default: 'partner' })

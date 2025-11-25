@@ -478,4 +478,88 @@ export class SolanaTicketService {
       return [];
     }
   }
+
+  /**
+   * Check if a wallet has a USDC token account
+   */
+  async checkUsdcAccountExists(owner: PublicKey): Promise<boolean> {
+    try {
+      const tokenAccountAddress = await getAssociatedTokenAddress(
+        this.usdcMint,
+        owner,
+      );
+
+      const accountInfo =
+        await this.connection.getAccountInfo(tokenAccountAddress);
+
+      return accountInfo !== null;
+    } catch (error) {
+      this.logger.warn(
+        `USDC account not found for ${owner.toBase58()}: ${error}`,
+      );
+      return false;
+    }
+  }
+
+  /**
+   * Create USDC token account for a wallet if it doesn't exist
+   * Server wallet pays for account creation
+   */
+  async createUsdcAccountIfNeeded(owner: PublicKey): Promise<{
+    success: boolean;
+    accountAddress: string;
+    created: boolean;
+    transactionSignature?: string;
+    error?: string;
+  }> {
+    try {
+      const tokenAccountAddress = await getAssociatedTokenAddress(
+        this.usdcMint,
+        owner,
+      );
+
+      // Check if account already exists
+      const accountInfo =
+        await this.connection.getAccountInfo(tokenAccountAddress);
+
+      if (accountInfo !== null) {
+        this.logger.log(
+          `USDC account already exists for ${owner.toBase58()}: ${tokenAccountAddress.toBase58()}`,
+        );
+        return {
+          success: true,
+          accountAddress: tokenAccountAddress.toBase58(),
+          created: false,
+        };
+      }
+
+      // Create the account using token service
+      this.logger.log(
+        `Creating USDC account for ${owner.toBase58()} (server pays)`,
+      );
+
+      const account = await this.tokenService.getOrCreateTokenAccount(
+        this.usdcMint,
+        owner,
+      );
+
+      this.logger.log(`USDC account created/retrieved: ${account.toBase58()}`);
+
+      return {
+        success: true,
+        accountAddress: account.toBase58(),
+        created: true,
+      };
+    } catch (error) {
+      this.logger.error(
+        `Error creating USDC account for ${owner.toBase58()}: ${error}`,
+      );
+      return {
+        success: false,
+        accountAddress: '',
+        created: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  }
 }
