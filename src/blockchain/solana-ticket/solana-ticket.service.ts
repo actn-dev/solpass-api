@@ -18,6 +18,7 @@ import {
 import { solanaConfig } from 'src/config/solana.config';
 import type { ConfigType } from '@nestjs/config';
 import { NodeWallet } from './node-wallete';
+import { bs58 } from '@coral-xyz/anchor/dist/cjs/utils/bytes';
 
 @Injectable()
 export class SolanaTicketService {
@@ -77,7 +78,7 @@ export class SolanaTicketService {
       // Generate a new keypair for the event
       const newKeypair = Keypair.generate();
       const publicKey = newKeypair.publicKey.toBase58();
-      const privateKey = Buffer.from(newKeypair.secretKey).toString('base64');
+      const privateKey = bs58.encode(newKeypair.secretKey);
 
       // Derive event PDA
       const [eventPda] = this.pdaService.deriveEventPDA(
@@ -398,6 +399,83 @@ export class SolanaTicketService {
     } catch (error) {
       this.logger.warn('Escrow account not found');
       return 0;
+    }
+  }
+
+  /**
+   * Verify ticket ownership
+   * Returns true if the ticket exists and belongs to the claimed seller
+   */
+  async verifyTicketOwnership(
+    eventPda: PublicKey,
+    ticketId: string,
+    claimedOwner: string,
+  ): Promise<{ isValid: boolean; currentOwner?: string; ticketData?: any }> {
+    try {
+      const [ticketPda] = this.pdaService.deriveTicketPDA(
+        this.programId,
+        eventPda,
+        ticketId,
+      );
+
+      const ticketData = await this.getTicketAccount(ticketPda);
+
+      if (!ticketData) {
+        // Ticket doesn't exist yet - valid for first purchase
+        return { isValid: true };
+      }
+
+      // Check if claimed owner matches on-chain owner
+      const isValid = ticketData.owner === claimedOwner;
+
+      return {
+        isValid,
+        currentOwner: ticketData.owner,
+        ticketData,
+      };
+    } catch (error) {
+      this.logger.error('Error verifying ticket ownership:', error);
+      return { isValid: false };
+    }
+  }
+
+  /**
+   * Get all tickets for an event by scanning program accounts
+   */
+  async getEventTickets(eventPda: PublicKey): Promise<any[]> {
+    try {
+      // Fetch all ticket accounts filtering by event PDA
+      // TicketAccount layout: discriminator(8) + event(32) + owner + seller + ticket_id + ...
+      // memcmp filter matches the 'event' field at offset 8
+      // @ts-ignore
+      const tickets = await this.program.account.ticketAccount.all([
+        {
+          memcmp: {
+            offset: 8, // Skip 8-byte discriminator to get to the 'event' Pubkey field
+            bytes: bs58.encode(eventPda.toBuffer()), // Encode as base58
+          },
+        },
+      ]);
+
+      this.logger.log(
+        `Found ${tickets.length} tickets for event ${eventPda.toBase58()}`,
+      );
+
+      return tickets.map((ticket) => ({
+        publicKey: ticket.publicKey.toBase58(),
+        // @ts-ignore
+        event: ticket.account.event.toBase58(),
+        ticketId: ticket.account.ticketId,
+        owner: ticket.account.owner,
+        seller: ticket.account.seller,
+        ticketPrice: ticket.account.ticketPrice,
+        resellCount: ticket.account.resellCount,
+        // @ts-ignore
+        purchaseDate: ticket.account.purchaseDate.toNumber(),
+      }));
+    } catch (error) {
+      this.logger.error('Error fetching event tickets:', error);
+      return [];
     }
   }
 }

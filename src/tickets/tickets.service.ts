@@ -56,6 +56,20 @@ export class TicketsService {
         throw new BadRequestException('Event is not active');
       }
 
+      // Verify ticket ownership before resell
+      const ownershipCheck =
+        await this.solanaTicketService.verifyTicketOwnership(
+          eventPda,
+          dto.ticketId,
+          dto.sellerId,
+        );
+
+      if (!ownershipCheck.isValid) {
+        throw new BadRequestException(
+          `Ticket ownership verification failed. Current owner: ${ownershipCheck.currentOwner}, Claimed seller: ${dto.sellerId}`,
+        );
+      }
+
       // Call blockchain service to resell/purchase ticket
       const { signature, ticketPda, resellCount } =
         await this.solanaTicketService.resellTicket({
@@ -133,7 +147,7 @@ export class TicketsService {
           seller: ticketData.seller,
           ticketPrice: ticketData.ticketPrice,
           resellCount: ticketData.resellCount,
-          purchaseDate: ticketData.purchaseDate,
+          purchaseDate: new Date(ticketData.purchaseDate * 1000).toISOString(),
           eventPda: eventPda.toBase58(),
         },
       };
@@ -141,6 +155,43 @@ export class TicketsService {
       this.logger.error('Error fetching ticket:', error);
       throw new NotFoundException(
         `Ticket not found: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
+    }
+  }
+
+  /**
+   * Get all tickets for an event from blockchain
+   */
+  async getEventTickets(eventId: string) {
+    try {
+      // Derive event PDA
+      const [eventPda] = this.pdaService.deriveEventPDA(
+        this.programId,
+        eventId,
+      );
+
+      // Fetch all tickets from blockchain
+      const tickets = await this.solanaTicketService.getEventTickets(eventPda);
+
+      return {
+        success: true,
+        eventId,
+        eventPda: eventPda.toBase58(),
+        totalTickets: tickets.length,
+        tickets: tickets.map((ticket) => ({
+          ticketPda: ticket.publicKey,
+          ticketId: ticket.ticketId,
+          owner: ticket.owner,
+          seller: ticket.seller,
+          ticketPrice: ticket.ticketPrice,
+          resellCount: ticket.resellCount,
+          purchaseDate: new Date(ticket.purchaseDate * 1000).toISOString(),
+        })),
+      };
+    } catch (error) {
+      this.logger.error('Error fetching event tickets:', error);
+      throw new BadRequestException(
+        `Failed to fetch tickets: ${error instanceof Error ? error.message : 'Unknown error'}`,
       );
     }
   }

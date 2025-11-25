@@ -110,7 +110,7 @@ export class EventsService {
 
       // Find event
       const event = await this.eventRepository.findOne({
-        where: { id: eventId },
+        where: { eventId: eventId },
         relations: ['partner'],
       });
 
@@ -166,7 +166,7 @@ export class EventsService {
         timestamp: Date.now(),
       });
 
-      await this.eventRepository.update(eventId, {
+      await this.eventRepository.update(event.id, {
         blockchainEnabled: true,
         eventPda: eventPda.toBase58(),
         blockchainInitTxHash: signature,
@@ -180,13 +180,15 @@ export class EventsService {
         `Blockchain initialized successfully for event: ${eventId}`,
       );
 
-      return await this.eventRepository.findOne({ where: { id: eventId } });
+      return await this.eventRepository.findOne({
+        where: { id: event.eventId },
+      });
     } catch (error) {
       this.logger.error('Error initializing blockchain:', error);
 
       // Log failure
       const event = await this.eventRepository.findOne({
-        where: { id: eventId },
+        where: { eventId: eventId },
       });
       if (event) {
         const blockchainEvents = event.blockchainEvents || [];
@@ -197,7 +199,7 @@ export class EventsService {
           },
           timestamp: Date.now(),
         });
-        await this.eventRepository.update(eventId, { blockchainEvents });
+        await this.eventRepository.update(event.id, { blockchainEvents });
       }
 
       if (
@@ -217,7 +219,7 @@ export class EventsService {
    */
   async findOne(eventId: string) {
     const event = await this.eventRepository.findOne({
-      where: { id: eventId },
+      where: { eventId: eventId },
       relations: ['partner'],
     });
 
@@ -385,6 +387,7 @@ export class EventsService {
       ticketsRemaining: event.totalTickets,
       revenue: 0,
       blockchainEnabled: event.blockchainEnabled,
+      tickets: [],
     };
 
     // If blockchain is enabled, fetch on-chain data
@@ -397,18 +400,41 @@ export class EventsService {
         if (eventData) {
           stats.ticketsSold = eventData.ticketsSold;
           stats.ticketsRemaining = event.totalTickets - eventData.ticketsSold;
-          stats.revenue = eventData.ticketsSold * event.ticketPrice;
           stats.onChainData = {
             isActive: eventData.isActive,
             royaltyDistributed: eventData.royaltyDistributed,
+            authority: eventData.authority.toBase58(),
           };
         }
 
-        // Get escrow balance
+        // Get all tickets from blockchain
+        const tickets =
+          await this.solanaTicketService.getEventTickets(eventPda);
+
+        // Calculate total revenue from actual ticket prices
+        let totalRevenue = 0;
+        stats.tickets = tickets.map((ticket) => {
+          totalRevenue += ticket.ticketPrice || 0;
+          return {
+            ticketId: ticket.ticketId,
+            owner: ticket.owner,
+            seller: ticket.seller,
+            currentPrice: ticket.ticketPrice,
+            resellCount: ticket.resellCount,
+            purchaseDate: ticket.purchaseDate,
+          };
+        });
+
+        stats.revenue = totalRevenue;
+        stats.averageTicketPrice =
+          tickets.length > 0 ? totalRevenue / tickets.length : 0;
+
+        // Get escrow balance (royalties collected)
         const escrowBalance =
           await this.solanaTicketService.getEscrowBalance(eventPda);
         stats.escrowBalance = escrowBalance;
         stats.escrowBalanceUSDC = escrowBalance / 1_000_000;
+        stats.totalRoyaltiesCollected = stats.escrowBalanceUSDC;
       } catch (error) {
         this.logger.warn(`Failed to fetch blockchain stats: ${error}`);
       }
@@ -506,7 +532,7 @@ export class EventsService {
         timestamp: Date.now(),
       });
 
-      await this.eventRepository.update(eventId, { blockchainEvents });
+      await this.eventRepository.update(event.id, { blockchainEvents });
 
       return {
         success: true,

@@ -3,12 +3,12 @@ import { registerAs } from '@nestjs/config';
 export const solanaConfig = registerAs('solana', () => {
   const serverWalletSecretKey = process.env.SOLANA_SERVER_SECRET;
   if (!serverWalletSecretKey) {
-    throw new Error('SERVER_WALLET_SECRET_KEY is required in .env');
+    throw new Error('SOLANA_SERVER_SECRET is required in .env');
   }
 
   const programId = process.env.SOLANA_PROGRAM_ID;
   if (!programId) {
-    throw new Error('PROGRAM_ID is required in .env');
+    throw new Error('SOLANA_PROGRAM_ID is required in .env');
   }
 
   return {

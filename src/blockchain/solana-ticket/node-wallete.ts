@@ -6,8 +6,6 @@ import {
   VersionedTransaction,
 } from '@solana/web3.js';
 
-import { bs58 } from '@coral-xyz/anchor/dist/cjs/utils/bytes';
-
 /**
  * Node only wallet.
  */

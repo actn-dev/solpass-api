@@ -30,6 +30,17 @@ export class TicketsController {
     return this.ticketsService.purchaseTicket(eventId, dto);
   }
 
+  @Get()
+  @ApiOperation({ summary: 'Get all tickets for an event' })
+  @ApiParam({ name: 'eventId', example: 'concert-001' })
+  @ApiResponse({
+    status: 200,
+    description: 'All tickets for event retrieved from blockchain',
+  })
+  async getEventTickets(@Param('eventId') eventId: string) {
+    return this.ticketsService.getEventTickets(eventId);
+  }
+
   @Get(':ticketId')
   @ApiOperation({ summary: 'Get ticket details' })
   @ApiParam({ name: 'eventId', example: 'concert-001' })

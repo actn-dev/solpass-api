@@ -26,8 +26,8 @@ export class EventOwnerGuard implements CanActivate {
     }
 
     const event = await this.eventRepository.findOne({
-      where: { id: eventId },
-      select: ['id', 'partnerId'],
+      where: { eventId: eventId },
+      select: ['id', 'partnerId', 'eventId'],
     });
 
     if (!event) {

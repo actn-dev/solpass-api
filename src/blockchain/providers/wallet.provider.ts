@@ -7,9 +7,18 @@ import { bs58 } from '@coral-xyz/anchor/dist/cjs/utils/bytes';
 export const WalletProvider = {
   provide: SERVER_WALLET,
   useFactory: (config: ConfigType<typeof solanaConfig>) => {
-    const secretKey = config.serverWalletSecretKey;
-    const secretKeyBuffer = bs58.decode(secretKey);
-    return Keypair.fromSecretKey(secretKeyBuffer);
+    try {
+      const secretKey = config.serverWalletSecretKey;
+      // Decode base58 secret key from SOLANA_SERVER_SECRET env variable
+      const secretKeyBuffer = bs58.decode(secretKey);
+      const keypair = Keypair.fromSecretKey(secretKeyBuffer);
+      console.log(`🔑 Server wallet loaded: ${keypair.publicKey.toBase58()}`);
+      return keypair;
+    } catch (error) {
+      throw new Error(
+        `Failed to load server wallet from SOLANA_SERVER_SECRET: ${error.message}`,
+      );
+    }
   },
   inject: [solanaConfig.KEY],
 };
