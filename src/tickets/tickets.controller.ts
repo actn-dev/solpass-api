@@ -53,4 +53,20 @@ export class TicketsController {
   ) {
     return this.ticketsService.getTicket(eventId, ticketId);
   }
+
+  @Get(':ticketId/history')
+  @ApiOperation({ summary: 'Get ticket transaction history' })
+  @ApiParam({ name: 'eventId', example: 'concert-001' })
+  @ApiParam({ name: 'ticketId', example: 'ticket-001' })
+  @ApiResponse({
+    status: 200,
+    description: 'Ticket transaction history retrieved',
+  })
+  @ApiResponse({ status: 404, description: 'No history found' })
+  async getTicketHistory(
+    @Param('eventId') eventId: string,
+    @Param('ticketId') ticketId: string,
+  ) {
+    return this.ticketsService.getTicketHistory(eventId, ticketId);
+  }
 }
