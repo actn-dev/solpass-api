@@ -374,7 +374,7 @@
             "description": "Bad request or already initialized"
           },
           "401": {
-            "description": "Unauthorized"
+            "description": "Unauthorized - Invalid API key"
           },
           "403": {
             "description": "Forbidden - not event owner"
@@ -388,7 +388,7 @@
             "bearer": []
           }
         ],
-        "summary": "Initialize event on blockchain",
+        "summary": "Initialize event on blockchain (API Key auth)",
         "tags": [
           "Events"
         ]
@@ -466,7 +466,7 @@
             "description": "Bad request - already distributed, no royalties, or partners missing USDC accounts"
           },
           "401": {
-            "description": "Unauthorized"
+            "description": "Unauthorized - Invalid API key"
           },
           "403": {
             "description": "Forbidden - not event owner"
@@ -480,7 +480,7 @@
             "bearer": []
           }
         ],
-        "summary": "Distribute royalties to party wallets (partners extracted from event.royaltyDistribution)",
+        "summary": "Distribute royalties to party wallets (API Key auth)",
         "tags": [
           "Events"
         ]
@@ -598,11 +598,19 @@
           "400": {
             "description": "Bad request"
           },
+          "401": {
+            "description": "Unauthorized - Invalid API key"
+          },
           "404": {
             "description": "Event not found"
           }
         },
-        "summary": "Purchase or resell a ticket",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Purchase or resell a ticket (API Key auth required)",
         "tags": [
           "Tickets"
         ]
@@ -663,6 +671,43 @@
           }
         },
         "summary": "Get ticket details",
+        "tags": [
+          "Tickets"
+        ]
+      }
+    },
+    "/api/v1/events/{eventId}/tickets/{ticketId}/history": {
+      "get": {
+        "operationId": "TicketsController_getTicketHistory",
+        "parameters": [
+          {
+            "name": "eventId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "example": "concert-001",
+              "type": "string"
+            }
+          },
+          {
+            "name": "ticketId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "example": "ticket-001",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Ticket transaction history retrieved"
+          },
+          "404": {
+            "description": "No history found"
+          }
+        },
+        "summary": "Get ticket transaction history",
         "tags": [
           "Tickets"
         ]
@@ -742,6 +787,70 @@
           }
         ],
         "summary": "Get current user profile (verify JWT token)",
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/api/v1/auth/api-key": {
+      "get": {
+        "operationId": "AuthController_getApiKey",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Returns API key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "example": {
+                    "apiKey": "sk_abc123..."
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - Invalid or expired token"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get API key for programmatic access (JWT required)",
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/api/v1/auth/regenerate-key": {
+      "post": {
+        "operationId": "AuthController_regenerateApiKey",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "New API key generated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "example": {
+                    "apiKey": "sk_xyz789..."
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - Invalid or expired token"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Regenerate API key (invalidates old key, JWT required)",
         "tags": [
           "Auth"
         ]

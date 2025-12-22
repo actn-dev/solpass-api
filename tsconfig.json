@@ -22,5 +22,8 @@
     "strictBindCallApply": false,
     "noFallthroughCasesInSwitch": false
   },
-  "exclude": ["solana-demo", "dist", "node_modules", "test", "**/*spec.ts"]
+  "exclude": ["solana-demo", "dist", "node_modules", "test", "**/*spec.ts"],
+  
+ "include": ["src/**/*", "test/**/*", "sst-env.d.ts"]
+
 }
