@@ -5,6 +5,10 @@
 
 declare module "sst" {
   export interface Resource {
+    "DB_PASSWORD": {
+      "type": "sst.sst.Secret"
+      "value": string
+    }
     "JWT_REFRESH_SECRET": {
       "type": "sst.sst.Secret"
       "value": string

@@ -197,7 +197,7 @@ export class EventsService {
       );
 
       const updatedEvent = await this.eventRepository.findOne({
-        where: { id: event.eventId },
+        where: { eventId: eventId },
       });
       return updatedEvent ? this.sanitizeEvent(updatedEvent) : null;
     } catch (error) {

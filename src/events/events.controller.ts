@@ -26,6 +26,7 @@ import { QueryEventsDto } from './dto/query-events.dto';
 import { DistributeRoyaltyDto } from './dto/distribute-royalty.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ApiKeyGuard } from '../auth/guards/api-key.guard';
+import { JwtOrApiKeyGuard } from '../auth/guards/jwt-or-api-key.guard';
 import { EventOwnerGuard } from './guards/event-owner.guard';
 
 @ApiTags('Events')
@@ -34,15 +35,15 @@ export class EventsController {
   constructor(private readonly eventsService: EventsService) {}
 
   @Post()
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(ApiKeyGuard)
   @ApiBearerAuth()
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
-    summary: 'Create a new event (database only, blockchain init separate)',
+    summary: 'Create a new event (API Key auth - database only, blockchain init separate)',
   })
   @ApiResponse({ status: 201, description: 'Event created successfully' })
   @ApiResponse({ status: 400, description: 'Bad request' })
-  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 401, description: 'Unauthorized - Invalid API key' })
   async createEvent(@Body() dto: CreateEventDto, @Request() req) {
     console.log(req.user);
     return this.eventsService.createEvent(dto, req.user.userId);
@@ -179,12 +180,12 @@ export class EventsController {
   }
 
   @Post(':id/enable-partner-usdc')
-  @UseGuards(JwtAuthGuard, EventOwnerGuard)
+  @UseGuards(JwtOrApiKeyGuard, EventOwnerGuard)
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
-      'Enable USDC token accounts for all partners (server wallet pays for creation)',
+      'Enable USDC token accounts for all partners (JWT or API Key auth)',
   })
   @ApiParam({ name: 'id', description: 'Event UUID' })
   @ApiResponse({
@@ -195,7 +196,7 @@ export class EventsController {
     status: 400,
     description: 'Bad request - partners missing wallet addresses',
   })
-  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 401, description: 'Unauthorized - Invalid credentials' })
   @ApiResponse({ status: 403, description: 'Forbidden - not event owner' })
   @ApiResponse({ status: 404, description: 'Event not found' })
   async enablePartnerUsdcAccounts(@Param('id') id: string, @Request() req) {
