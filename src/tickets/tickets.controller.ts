@@ -6,10 +6,19 @@ import {
   Param,
   HttpCode,
   HttpStatus,
+  UseGuards,
+  Request,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiParam,
+  ApiBearerAuth,
+} from '@nestjs/swagger';
 import { TicketsService } from './tickets.service';
 import { CreateTicketDto } from './dto/create-ticket.dto';
+import { ApiKeyGuard } from '../auth/guards/api-key.guard';
 
 @ApiTags('Tickets')
 @Controller('api/v1/events/:eventId/tickets')
@@ -17,15 +26,21 @@ export class TicketsController {
   constructor(private readonly ticketsService: TicketsService) {}
 
   @Post()
+  @UseGuards(ApiKeyGuard)
+  @ApiBearerAuth()
   @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: 'Purchase or resell a ticket' })
+  @ApiOperation({
+    summary: 'Purchase or resell a ticket (API Key auth required)',
+  })
   @ApiParam({ name: 'eventId', example: 'concert-001' })
   @ApiResponse({ status: 201, description: 'Ticket purchased successfully' })
   @ApiResponse({ status: 400, description: 'Bad request' })
+  @ApiResponse({ status: 401, description: 'Unauthorized - Invalid API key' })
   @ApiResponse({ status: 404, description: 'Event not found' })
   async purchaseTicket(
     @Param('eventId') eventId: string,
     @Body() dto: CreateTicketDto,
+    @Request() req,
   ) {
     return this.ticketsService.purchaseTicket(eventId, dto);
   }

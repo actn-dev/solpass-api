@@ -64,6 +64,22 @@ export class UsersService {
     return await this.userRepository.findOne({ where: { walletAddress } });
   }
 
+  async findByApiKey(apiKey: string): Promise<User | null> {
+    return await this.userRepository
+      .createQueryBuilder('user')
+      .where('user.apiKey = :apiKey', { apiKey })
+      .addSelect('user.apiKey')
+      .getOne();
+  }
+
+  async findByIdWithApiKey(id: string): Promise<User | null> {
+    return await this.userRepository
+      .createQueryBuilder('user')
+      .where('user.id = :id', { id })
+      .addSelect('user.apiKey')
+      .getOne();
+  }
+
   async validatePassword(
     plainPassword: string,
     hashedPassword: string,

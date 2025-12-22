@@ -7,6 +7,7 @@ import { AuthController } from './auth.controller';
 import { UsersModule } from '../users/users.module';
 import { LocalStrategy } from './strategies/local.strategy';
 import { JwtStrategy } from './strategies/jwt.strategy';
+import { ApiKeyStrategy } from './strategies/api-key.strategy';
 import { jwtConfig } from '../config/jwt.config';
 
 @Module({
@@ -23,7 +24,7 @@ import { jwtConfig } from '../config/jwt.config';
       }),
     }),
   ],
-  providers: [AuthService, LocalStrategy, JwtStrategy],
+  providers: [AuthService, LocalStrategy, JwtStrategy, ApiKeyStrategy],
   controllers: [AuthController],
   exports: [AuthService],
 })

@@ -68,6 +68,34 @@ export class AuthService {
     };
   }
 
+  async getApiKey(userId: string): Promise<{ apiKey: string }> {
+    const user = await this.usersService.findByIdWithApiKey(userId);
+    if (!user) {
+      throw new UnauthorizedException('User not found');
+    }
+
+    if (!user.apiKey) {
+      // Generate API key if not exists
+      const apiKey = this.generateApiKey();
+      await this.usersService.updateApiKey(userId, apiKey);
+      return { apiKey };
+    }
+
+    return { apiKey: user.apiKey };
+  }
+
+  async regenerateApiKey(userId: string): Promise<{ apiKey: string }> {
+    const user = await this.usersService.findById(userId);
+    if (!user) {
+      throw new UnauthorizedException('User not found');
+    }
+
+    const apiKey = this.generateApiKey();
+    await this.usersService.updateApiKey(userId, apiKey);
+
+    return { apiKey };
+  }
+
   private generateApiKey(): string {
     // Generate a random API key
     const chars =

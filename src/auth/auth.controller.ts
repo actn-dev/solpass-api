@@ -66,4 +66,51 @@ export class AuthController {
       user: userWithoutPassword,
     };
   }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('api-key')
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Get API key for programmatic access (JWT required)',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Returns API key',
+    schema: {
+      example: {
+        apiKey: 'sk_abc123...',
+      },
+    },
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized - Invalid or expired token',
+  })
+  async getApiKey(@Request() req) {
+    return this.authService.getApiKey(req.user.userId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('regenerate-key')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Regenerate API key (invalidates old key, JWT required)',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'New API key generated',
+    schema: {
+      example: {
+        apiKey: 'sk_xyz789...',
+      },
+    },
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized - Invalid or expired token',
+  })
+  async regenerateApiKey(@Request() req) {
+    return this.authService.regenerateApiKey(req.user.userId);
+  }
 }

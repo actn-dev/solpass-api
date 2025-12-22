@@ -25,6 +25,7 @@ import { UpdateEventDto } from './dto/update-event.dto';
 import { QueryEventsDto } from './dto/query-events.dto';
 import { DistributeRoyaltyDto } from './dto/distribute-royalty.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { ApiKeyGuard } from '../auth/guards/api-key.guard';
 import { EventOwnerGuard } from './guards/event-owner.guard';
 
 @ApiTags('Events')
@@ -64,10 +65,10 @@ export class EventsController {
   }
 
   @Post(':id/initialize-blockchain')
-  @UseGuards(JwtAuthGuard, EventOwnerGuard)
+  @UseGuards(ApiKeyGuard, EventOwnerGuard)
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Initialize event on blockchain' })
+  @ApiOperation({ summary: 'Initialize event on blockchain (API Key auth)' })
   @ApiParam({ name: 'id', description: 'Event UUID' })
   @ApiResponse({
     status: 200,
@@ -77,7 +78,7 @@ export class EventsController {
     status: 400,
     description: 'Bad request or already initialized',
   })
-  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 401, description: 'Unauthorized - Invalid API key' })
   @ApiResponse({ status: 403, description: 'Forbidden - not event owner' })
   @ApiResponse({ status: 404, description: 'Event not found' })
   async initializeBlockchain(@Param('id') id: string, @Request() req) {
@@ -134,12 +135,12 @@ export class EventsController {
   }
 
   @Post(':id/distribute')
-  @UseGuards(JwtAuthGuard, EventOwnerGuard)
+  @UseGuards(ApiKeyGuard, EventOwnerGuard)
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
-      'Distribute royalties to party wallets (partners extracted from event.royaltyDistribution)',
+      'Distribute royalties to party wallets (API Key auth)',
     description:
       'No request body needed. Partners and their wallet addresses are automatically extracted from the event database. All partners must have USDC token accounts enabled first.',
   })
@@ -153,7 +154,7 @@ export class EventsController {
     description:
       'Bad request - already distributed, no royalties, or partners missing USDC accounts',
   })
-  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 401, description: 'Unauthorized - Invalid API key' })
   @ApiResponse({ status: 403, description: 'Forbidden - not event owner' })
   @ApiResponse({ status: 404, description: 'Event not found' })
   async distributeRoyalty(
