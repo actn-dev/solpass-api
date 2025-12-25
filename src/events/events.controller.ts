@@ -258,4 +258,20 @@ export class EventsController {
   async getTicketDistribution(@Param('id') id: string) {
     return this.eventsService.getTicketDistribution(id);
   }
+
+  @Get(':id/transactions')
+  @ApiOperation({
+    summary: 'Get all ticket transactions for an event',
+    description:
+      'Returns all ticket purchase and resale transactions with full history.',
+  })
+  @ApiParam({ name: 'id', description: 'Event business ID (e.g., concert-001)' })
+  @ApiResponse({
+    status: 200,
+    description: 'Transactions retrieved successfully',
+  })
+  @ApiResponse({ status: 404, description: 'Event not found' })
+  async getEventTransactions(@Param('id') id: string) {
+    return this.eventsService.getEventTransactions(id);
+  }
 }

@@ -511,7 +511,7 @@ export class EventsService {
         const escrowBalance =
           await this.solanaTicketService.getEscrowBalance(eventPda);
         stats.escrowBalance = escrowBalance;
-        stats.escrowBalanceUSDC = escrowBalance / 1_000_000;
+        stats.escrowBalanceUSDC = escrowBalance;
         stats.totalRoyaltiesCollected = stats.escrowBalanceUSDC;
       } catch (error) {
         this.logger.warn(`Failed to fetch blockchain stats: ${error}`);
@@ -1091,9 +1091,9 @@ export class EventsService {
         royalties: {
           royaltyPercentage,
           estimatedRoyalties,
-          royaltiesCollected: escrowBalance / 1_000_000,
-          royaltiesDistributed: royaltiesDistributed / 1_000_000,
-          pendingRoyalties: escrowBalance / 1_000_000,
+          royaltiesCollected: escrowBalance,
+          royaltiesDistributed: royaltiesDistributed,
+          pendingRoyalties: escrowBalance,
         },
         priceStatistics: {
           averagePrice: avgPrice,
@@ -1190,12 +1190,12 @@ export class EventsService {
         eventId: event.eventId,
         eventName: event.name,
         summary: {
-          totalTickets: event.totalTickets,
+          totalTickets: event.totalTickets || 0,
           ticketsSold: tickets.length,
-          ticketsRemaining: event.totalTickets - tickets.length,
+          ticketsRemaining: (event.totalTickets || 0) - tickets.length,
           soldPercentage:
-            event.totalTickets > 0
-              ? (tickets.length / event.totalTickets) * 100
+            (event.totalTickets || 0) > 0
+              ? (tickets.length / (event.totalTickets || 1)) * 100
               : 0,
         },
         byStatus,
@@ -1204,7 +1204,7 @@ export class EventsService {
           averagePrice: avgPrice,
           minimumPrice: minPrice,
           maximumPrice: maxPrice,
-          originalPrice: parseFloat(event.ticketPrice.toString()),
+          originalPrice: event.ticketPrice ? parseFloat(event.ticketPrice.toString()) : 0,
           averageAppreciation: avgAppreciation,
         },
         topTickets: {
@@ -1219,6 +1219,61 @@ export class EventsService {
       }
       throw new BadRequestException(
         `Failed to fetch ticket distribution: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
+    }
+  }
+
+  /**
+   * Get all transactions for an event
+   */
+  async getEventTransactions(eventId: string) {
+    try {
+      const event = await this.findOne(eventId);
+
+      // Get all transactions ordered by date using QueryBuilder for more flexibility
+      const queryBuilder = this.ticketTransactionRepository
+        .createQueryBuilder('transaction')
+        .where('transaction.eventId = :businessId', {
+          businessId: event.eventId,
+        })
+        .orWhere('transaction.eventId = :uuid', { uuid: event.id })
+        .orWhere(
+          "transaction.metadata::jsonb @> :metadataFilter",
+          { metadataFilter: JSON.stringify({ eventId: event.eventId }) }
+        )
+        .orderBy('transaction.createdAt', 'DESC');
+
+      const transactions = await queryBuilder.getMany();
+
+      this.logger.log(
+        `Found ${transactions.length} transactions for event ${event.eventId} (UUID: ${event.id})`,
+      );
+
+      return {
+        success: true,
+        eventId: event.eventId,
+        eventName: event.name,
+        totalTransactions: transactions.length,
+        transactions: transactions.map((tx) => ({
+          id: tx.id,
+          ticketId: tx.ticketId,
+          fromOwner: tx.fromOwner,
+          toOwner: tx.toOwner,
+          price: parseFloat(tx.price.toString()),
+          transactionType: tx.transactionType,
+          blockchainTxHash: tx.blockchainTxHash,
+          status: tx.blockchainTxStatus,
+          createdAt: tx.createdAt,
+          metadata: tx.metadata,
+        })),
+      };
+    } catch (error) {
+      this.logger.error('Error fetching event transactions:', error);
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      throw new BadRequestException(
+        `Failed to fetch transactions: ${error instanceof Error ? error.message : 'Unknown error'}`,
       );
     }
   }

@@ -17,6 +17,7 @@ import { QueryTicketsDto } from './dto/query-tickets.dto';
 import { solanaConfig } from '../config/solana.config';
 import type { ConfigType } from '@nestjs/config';
 import { Ticket, TicketStatus } from './entities/ticket.entity';
+import { usdToMicroUsdc, microUsdcToUsd } from '../blockchain/utils/currency.utils';
 import {
   TicketTransaction,
   TransactionType,
@@ -84,14 +85,15 @@ export class TicketsService {
       }
 
       // Call blockchain service to resell/purchase ticket
+      // Convert USD prices to micro-USDC for blockchain
       const { signature, ticketPda, resellCount } =
         await this.solanaTicketService.resellTicket({
           eventPda,
           ticketId: dto.ticketId,
           sellerId: dto.sellerId,
           buyerId: dto.buyerId,
-          price: dto.newPrice,
-          originalPrice: dto.originalPrice,
+          price: usdToMicroUsdc(dto.newPrice),
+          originalPrice: usdToMicroUsdc(dto.originalPrice),
         });
 
       // Wait for confirmation

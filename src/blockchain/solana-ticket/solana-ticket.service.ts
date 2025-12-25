@@ -19,6 +19,7 @@ import { solanaConfig } from 'src/config/solana.config';
 import type { ConfigType } from '@nestjs/config';
 import { NodeWallet } from './node-wallete';
 import { bs58 } from '@coral-xyz/anchor/dist/cjs/utils/bytes';
+import { usdToMicroUsdc, microUsdcToUsd } from '../utils/currency.utils';
 
 @Injectable()
 export class SolanaTicketService {
@@ -348,10 +349,11 @@ export class SolanaTicketService {
 
       this.logger.log(`Royalties distributed: ${signature}`);
 
-      // Calculate distributed amounts
-      const totalAmount = (escrowAccount as any).usdcAmount.toNumber();
+      // Calculate distributed amounts (convert from micro-USDC to USD)
+      const totalAmountMicroUsdc = (escrowAccount as any).usdcAmount.toNumber();
+      const totalAmountUsd = microUsdcToUsd(totalAmountMicroUsdc);
       const distributedAmounts = royaltyPercentages.map((pct: number) =>
-        Math.floor((totalAmount * pct) / 100),
+        parseFloat(((totalAmountUsd * pct) / 100).toFixed(2)),
       );
 
       return { signature, distributedAmounts };
@@ -394,7 +396,7 @@ export class SolanaTicketService {
   }
 
   /**
-   * Get escrow balance
+   * Get escrow balance (royalties collected) in USD
    */
   async getEscrowBalance(eventPda: PublicKey): Promise<number> {
     try {
@@ -406,7 +408,8 @@ export class SolanaTicketService {
       const escrowAccount =
         // @ts-ignore - Anchor account typing
         await this.program.account.royaltyEscrow.fetch(royaltyEscrowPda);
-      return (escrowAccount as any).usdcAmount.toNumber();
+      const microUsdc = (escrowAccount as any).usdcAmount.toNumber();
+      return microUsdcToUsd(microUsdc);
     } catch (error) {
       this.logger.warn('Escrow account not found');
       return 0;
@@ -479,7 +482,7 @@ export class SolanaTicketService {
         ticketId: ticket.account.ticketId,
         owner: ticket.account.owner,
         seller: ticket.account.seller,
-        ticketPrice: ticket.account.ticketPrice,
+        ticketPrice: microUsdcToUsd(Number(ticket.account.ticketPrice)),
         resellCount: ticket.account.resellCount,
         // @ts-ignore
         purchaseDate: ticket.account.purchaseDate.toNumber(),

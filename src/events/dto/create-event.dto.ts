@@ -82,7 +82,7 @@ export class CreateEventDto {
 
   @ApiProperty({
     example: 100,
-    description: 'Ticket price in smallest currency unit',
+    description: 'Ticket price in USD (e.g., 100.00)',
   })
   @IsNumber()
   @Min(0)
