@@ -13,6 +13,7 @@ import { SolanaService } from '../blockchain/services/solana.service';
 import { SolanaTicketService } from '../blockchain/solana-ticket/solana-ticket.service';
 import { EventsService } from '../events/events.service';
 import { CreateTicketDto } from './dto/create-ticket.dto';
+import { QueryTicketsDto } from './dto/query-tickets.dto';
 import { solanaConfig } from '../config/solana.config';
 import type { ConfigType } from '@nestjs/config';
 import { Ticket, TicketStatus } from './entities/ticket.entity';
@@ -305,7 +306,7 @@ export class TicketsService {
   /**
    * Get all tickets for an event from blockchain
    */
-  async getEventTickets(eventId: string) {
+  async getEventTickets(eventId: string, filters?: QueryTicketsDto) {
     try {
       // Derive event PDA
       const [eventPda] = this.pdaService.deriveEventPDA(
@@ -316,12 +317,49 @@ export class TicketsService {
       // Fetch all tickets from blockchain
       const tickets = await this.solanaTicketService.getEventTickets(eventPda);
 
+      // Get database tickets for additional filtering
+      let dbTickets = await this.ticketRepository.find({
+        where: { eventId },
+      });
+
+      // Apply filters if provided
+      if (filters) {
+        if (filters.status) {
+          dbTickets = dbTickets.filter((t) => t.status === filters.status);
+        }
+        if (filters.minPrice !== undefined) {
+          dbTickets = dbTickets.filter(
+            (t) => parseFloat(t.currentPrice.toString()) >= filters.minPrice!,
+          );
+        }
+        if (filters.maxPrice !== undefined) {
+          dbTickets = dbTickets.filter(
+            (t) => parseFloat(t.currentPrice.toString()) <= filters.maxPrice!,
+          );
+        }
+        if (filters.maxResellCount !== undefined) {
+          dbTickets = dbTickets.filter(
+            (t) => t.resellCount <= filters.maxResellCount!,
+          );
+        }
+        if (filters.owner) {
+          dbTickets = dbTickets.filter((t) => t.currentOwner === filters.owner);
+        }
+      }
+
+      // Filter blockchain tickets to match database results
+      const filteredTicketIds = new Set(dbTickets.map((t) => t.ticketId));
+      const filteredBlockchainTickets = tickets.filter((t) =>
+        filteredTicketIds.has(t.ticketId),
+      );
+
       return {
         success: true,
         eventId,
         eventPda: eventPda.toBase58(),
-        totalTickets: tickets.length,
-        tickets: tickets.map((ticket) => ({
+        totalTickets: filteredBlockchainTickets.length,
+        filters: filters || {},
+        tickets: filteredBlockchainTickets.map((ticket) => ({
           ticketPda: ticket.publicKey,
           ticketId: ticket.ticketId,
           owner: ticket.owner,
@@ -335,6 +373,186 @@ export class TicketsService {
       this.logger.error('Error fetching event tickets:', error);
       throw new BadRequestException(
         `Failed to fetch tickets: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
+    }
+  }
+
+  /**
+   * Get tickets by wallet address across all events
+   */
+  async getTicketsByWallet(walletAddress: string) {
+    try {
+      this.logger.log(`Fetching tickets for wallet: ${walletAddress}`);
+
+      // Get all tickets owned by this wallet from database
+      const tickets = await this.ticketRepository.find({
+        where: { currentOwner: walletAddress },
+        relations: ['event'],
+        order: { createdAt: 'DESC' },
+      });
+
+      // Group tickets by event
+      const ticketsByEvent = tickets.reduce(
+        (acc, ticket) => {
+          const eventId = ticket.eventId;
+          if (!acc[eventId]) {
+            acc[eventId] = {
+              eventId,
+              eventName: ticket.event?.name || 'Unknown Event',
+              tickets: [],
+            };
+          }
+          acc[eventId].tickets.push({
+            ticketId: ticket.ticketId,
+            ticketPda: ticket.ticketPda,
+            currentPrice: parseFloat(ticket.currentPrice.toString()),
+            originalPrice: parseFloat(ticket.originalPrice.toString()),
+            resellCount: ticket.resellCount,
+            status: ticket.status,
+            purchaseDate: ticket.purchaseDate,
+          });
+          return acc;
+        },
+        {} as Record<string, any>,
+      );
+
+      // Calculate portfolio statistics
+      const totalTickets = tickets.length;
+      const totalValue = tickets.reduce(
+        (sum, t) => sum + parseFloat(t.currentPrice.toString()),
+        0,
+      );
+      const totalInvested = tickets.reduce(
+        (sum, t) => sum + parseFloat(t.originalPrice.toString()),
+        0,
+      );
+      const activeTickets = tickets.filter((t) => t.status === 'active').length;
+      const usedTickets = tickets.filter((t) => t.status === 'used').length;
+
+      return {
+        success: true,
+        walletAddress,
+        portfolio: {
+          totalTickets,
+          activeTickets,
+          usedTickets,
+          totalValue,
+          totalInvested,
+          unrealizedGainLoss: totalValue - totalInvested,
+          unrealizedGainLossPercentage:
+            totalInvested > 0
+              ? ((totalValue - totalInvested) / totalInvested) * 100
+              : 0,
+        },
+        events: Object.values(ticketsByEvent),
+      };
+    } catch (error) {
+      this.logger.error('Error fetching tickets by wallet:', error);
+      throw new BadRequestException(
+        `Failed to fetch tickets: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
+    }
+  }
+
+  /**
+   * Get available tickets for an event (unsold or listed for resale)
+   */
+  async getAvailableTickets(eventId: string) {
+    try {
+      this.logger.log(`Fetching available tickets for event: ${eventId}`);
+
+      // Get event details
+      const event = await this.eventsService.findOne(eventId);
+
+      if (!event.blockchainEnabled || !event.eventPda) {
+        throw new BadRequestException('Event not initialized on blockchain');
+      }
+
+      const eventPda = new PublicKey(event.eventPda);
+
+      // Get event data from blockchain
+      const eventData =
+        await this.solanaTicketService.getEventAccount(eventPda);
+
+      if (!eventData) {
+        throw new NotFoundException('Event not found on blockchain');
+      }
+
+      // Validate event data
+      if (!event.totalTickets || !event.ticketPrice) {
+        throw new BadRequestException(
+          'Event missing required ticket information',
+        );
+      }
+
+      // Calculate available tickets
+      const totalTickets = event.totalTickets;
+      const soldTickets = eventData.ticketsSold;
+      const availableCount = totalTickets - soldTickets;
+      const originalPrice = parseFloat(event.ticketPrice.toString());
+
+      // Get all sold tickets from database
+      const soldTicketsList = await this.ticketRepository.find({
+        where: { eventId: event.eventId },
+        order: { currentPrice: 'ASC' },
+      });
+
+      // For marketplace, show active tickets that could be resold
+      const activeTickets = soldTicketsList
+        .filter((t) => t.status === 'active')
+        .map((t) => ({
+          ticketId: t.ticketId,
+          ticketPda: t.ticketPda,
+          currentOwner: t.currentOwner,
+          currentPrice: parseFloat(t.currentPrice.toString()),
+          originalPrice: parseFloat(t.originalPrice.toString()),
+          resellCount: t.resellCount,
+          priceAppreciation:
+            ((parseFloat(t.currentPrice.toString()) -
+              parseFloat(t.originalPrice.toString())) /
+              parseFloat(t.originalPrice.toString())) *
+            100,
+        }));
+
+      return {
+        success: true,
+        eventId: event.eventId,
+        eventName: event.name,
+        availability: {
+          totalTickets,
+          soldTickets,
+          unsoldTickets: availableCount,
+          availabilityPercentage: (availableCount / totalTickets) * 100,
+          originalPrice,
+        },
+        marketplace: {
+          activeListings: activeTickets.length,
+          lowestPrice:
+            activeTickets.length > 0
+              ? Math.min(...activeTickets.map((t) => t.currentPrice))
+              : originalPrice,
+          highestPrice:
+            activeTickets.length > 0
+              ? Math.max(...activeTickets.map((t) => t.currentPrice))
+              : originalPrice,
+          averagePrice:
+            activeTickets.length > 0
+              ? activeTickets.reduce((sum, t) => sum + t.currentPrice, 0) /
+                activeTickets.length
+              : originalPrice,
+          tickets: activeTickets,
+        },
+      };
+    } catch (error) {
+      this.logger.error('Error fetching available tickets:', error);
+      if (
+        error instanceof NotFoundException ||
+        error instanceof BadRequestException
+      ) {
+        throw error;
+      }
+      throw new BadRequestException(
+        `Failed to fetch available tickets: ${error instanceof Error ? error.message : 'Unknown error'}`,
       );
     }
   }

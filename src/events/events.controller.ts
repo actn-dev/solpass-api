@@ -24,6 +24,7 @@ import { CreateEventDto } from './dto/create-event.dto';
 import { UpdateEventDto } from './dto/update-event.dto';
 import { QueryEventsDto } from './dto/query-events.dto';
 import { DistributeRoyaltyDto } from './dto/distribute-royalty.dto';
+import { DailyAnalyticsDto } from './dto/daily-analytics.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ApiKeyGuard } from '../auth/guards/api-key.guard';
 import { JwtOrApiKeyGuard } from '../auth/guards/jwt-or-api-key.guard';
@@ -201,5 +202,60 @@ export class EventsController {
   @ApiResponse({ status: 404, description: 'Event not found' })
   async enablePartnerUsdcAccounts(@Param('id') id: string, @Request() req) {
     return this.eventsService.enablePartnerUsdcAccounts(id, req.user.userId);
+  }
+
+  @Get(':id/analytics/daily')
+  @ApiOperation({
+    summary: 'Get daily transaction analytics for an event',
+    description:
+      'Returns daily purchase/resell counts and revenue. Defaults to last 30 days if no date range provided.',
+  })
+  @ApiParam({ name: 'id', description: 'Event UUID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Daily analytics retrieved successfully',
+  })
+  @ApiResponse({ status: 404, description: 'Event not found' })
+  async getDailyAnalytics(
+    @Param('id') id: string,
+    @Query() query: DailyAnalyticsDto,
+  ) {
+    return this.eventsService.getDailyAnalytics(id, query);
+  }
+
+  @Get(':id/analytics/revenue')
+  @UseGuards(JwtAuthGuard, EventOwnerGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Get revenue breakdown for an event',
+    description:
+      'Returns primary vs secondary revenue, royalties collected/distributed, and price statistics.',
+  })
+  @ApiParam({ name: 'id', description: 'Event UUID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Revenue breakdown retrieved successfully',
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 403, description: 'Forbidden - not event owner' })
+  @ApiResponse({ status: 404, description: 'Event not found' })
+  async getRevenueBreakdown(@Param('id') id: string, @Request() req) {
+    return this.eventsService.getRevenueBreakdown(id, req.user.userId);
+  }
+
+  @Get(':id/analytics/tickets')
+  @ApiOperation({
+    summary: 'Get ticket distribution analytics',
+    description:
+      'Returns tickets grouped by status, resell count, price distribution, and top tickets.',
+  })
+  @ApiParam({ name: 'id', description: 'Event UUID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Ticket distribution analytics retrieved successfully',
+  })
+  @ApiResponse({ status: 404, description: 'Event not found' })
+  async getTicketDistribution(@Param('id') id: string) {
+    return this.eventsService.getTicketDistribution(id);
   }
 }

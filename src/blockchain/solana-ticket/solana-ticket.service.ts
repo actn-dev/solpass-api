@@ -86,6 +86,17 @@ export class SolanaTicketService {
         params.eventId,
       );
 
+      // Check if account already exists on-chain
+      const accountInfo = await this.connection.getAccountInfo(eventPda);
+      if (accountInfo !== null) {
+        this.logger.warn(
+          `Event PDA ${eventPda.toBase58()} already exists on blockchain`,
+        );
+        throw new Error(
+          `Event with ID "${params.eventId}" already exists on blockchain. The account ${eventPda.toBase58()} is already in use. Please use a different eventId.`,
+        );
+      }
+
       // Call createEvent instruction (only 3 params: eventId, name, royalty)
       // @ts-ignore
       const signature = await this.program.methods

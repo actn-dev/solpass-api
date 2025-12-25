@@ -4,6 +4,7 @@ import {
   Post,
   Body,
   Param,
+  Query,
   HttpCode,
   HttpStatus,
   UseGuards,
@@ -18,6 +19,7 @@ import {
 } from '@nestjs/swagger';
 import { TicketsService } from './tickets.service';
 import { CreateTicketDto } from './dto/create-ticket.dto';
+import { QueryTicketsDto } from './dto/query-tickets.dto';
 import { ApiKeyGuard } from '../auth/guards/api-key.guard';
 
 @ApiTags('Tickets')
@@ -46,14 +48,35 @@ export class TicketsController {
   }
 
   @Get()
-  @ApiOperation({ summary: 'Get all tickets for an event' })
+  @ApiOperation({
+    summary: 'Get all tickets for an event with optional filters',
+  })
   @ApiParam({ name: 'eventId', example: 'concert-001' })
   @ApiResponse({
     status: 200,
-    description: 'All tickets for event retrieved from blockchain',
+    description: 'Filtered tickets for event retrieved from blockchain',
   })
-  async getEventTickets(@Param('eventId') eventId: string) {
-    return this.ticketsService.getEventTickets(eventId);
+  async getEventTickets(
+    @Param('eventId') eventId: string,
+    @Query() filters: QueryTicketsDto,
+  ) {
+    return this.ticketsService.getEventTickets(eventId, filters);
+  }
+
+  @Get('available')
+  @ApiOperation({
+    summary: 'Get available tickets for an event',
+    description:
+      'Returns unsold tickets and active marketplace listings for resale',
+  })
+  @ApiParam({ name: 'eventId', example: 'concert-001' })
+  @ApiResponse({
+    status: 200,
+    description: 'Available tickets retrieved successfully',
+  })
+  @ApiResponse({ status: 404, description: 'Event not found' })
+  async getAvailableTickets(@Param('eventId') eventId: string) {
+    return this.ticketsService.getAvailableTickets(eventId);
   }
 
   @Get(':ticketId')

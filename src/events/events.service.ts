@@ -19,7 +19,10 @@ import { CreateEventDto } from './dto/create-event.dto';
 import { DistributeRoyaltyDto } from './dto/distribute-royalty.dto';
 import { QueryEventsDto } from './dto/query-events.dto';
 import { UpdateEventDto } from './dto/update-event.dto';
+import { DailyAnalyticsDto } from './dto/daily-analytics.dto';
 import { Event } from './entities/event.entity';
+import { TicketTransaction } from '../tickets/entities/ticket-transaction.entity';
+import { Ticket } from '../tickets/entities/ticket.entity';
 
 @Injectable()
 export class EventsService {
@@ -29,6 +32,10 @@ export class EventsService {
   constructor(
     @InjectRepository(Event)
     private readonly eventRepository: Repository<Event>,
+    @InjectRepository(TicketTransaction)
+    private readonly ticketTransactionRepository: Repository<TicketTransaction>,
+    @InjectRepository(Ticket)
+    private readonly ticketRepository: Repository<Ticket>,
     private readonly solanaTicketService: SolanaTicketService,
     private readonly solanaService: SolanaService,
     private readonly pdaService: PdaService,
@@ -861,6 +868,357 @@ export class EventsService {
       }
       throw new NotFoundException(
         `Escrow not found: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
+    }
+  }
+
+  /**
+   * Get daily transaction analytics for an event
+   */
+  async getDailyAnalytics(eventId: string, dto: DailyAnalyticsDto) {
+    try {
+      const event = await this.findOne(eventId);
+
+      // Set default date range if not provided (last 30 days)
+      const endDate = dto.endDate
+        ? new Date(dto.endDate)
+        : new Date();
+      const startDate = dto.startDate
+        ? new Date(dto.startDate)
+        : new Date(endDate.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+      // Fetch all transactions for this event in date range
+      const transactions = await this.ticketTransactionRepository
+        .createQueryBuilder('transaction')
+        .where('transaction.eventId = :eventId', { eventId: event.eventId })
+        .andWhere('transaction.createdAt >= :startDate', { startDate })
+        .andWhere('transaction.createdAt <= :endDate', { endDate })
+        .orderBy('transaction.createdAt', 'ASC')
+        .getMany();
+
+      // Group transactions by date
+      const dailyData = new Map<
+        string,
+        {
+          date: string;
+          purchaseCount: number;
+          resellCount: number;
+          purchaseRevenue: number;
+          resellRevenue: number;
+          totalRevenue: number;
+          totalTransactions: number;
+        }
+      >();
+
+      transactions.forEach((tx) => {
+        const dateKey = tx.createdAt.toISOString().split('T')[0];
+
+        if (!dailyData.has(dateKey)) {
+          dailyData.set(dateKey, {
+            date: dateKey,
+            purchaseCount: 0,
+            resellCount: 0,
+            purchaseRevenue: 0,
+            resellRevenue: 0,
+            totalRevenue: 0,
+            totalTransactions: 0,
+          });
+        }
+
+        const dayData = dailyData.get(dateKey)!;
+        const price = parseFloat(tx.price.toString());
+
+        if (tx.transactionType === 'purchase') {
+          dayData.purchaseCount++;
+          dayData.purchaseRevenue += price;
+        } else if (tx.transactionType === 'resell') {
+          dayData.resellCount++;
+          dayData.resellRevenue += price;
+        }
+
+        dayData.totalRevenue += price;
+        dayData.totalTransactions++;
+      });
+
+      // Convert map to sorted array
+      const dailyStats = Array.from(dailyData.values()).sort(
+        (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
+      );
+
+      // Calculate summary statistics
+      const summary = {
+        totalPurchases: dailyStats.reduce(
+          (sum, day) => sum + day.purchaseCount,
+          0,
+        ),
+        totalResells: dailyStats.reduce((sum, day) => sum + day.resellCount, 0),
+        totalRevenue: dailyStats.reduce((sum, day) => sum + day.totalRevenue, 0),
+        primaryRevenue: dailyStats.reduce(
+          (sum, day) => sum + day.purchaseRevenue,
+          0,
+        ),
+        secondaryRevenue: dailyStats.reduce(
+          (sum, day) => sum + day.resellRevenue,
+          0,
+        ),
+        averageDailyRevenue:
+          dailyStats.length > 0
+            ? dailyStats.reduce((sum, day) => sum + day.totalRevenue, 0) /
+              dailyStats.length
+            : 0,
+        peakDay: dailyStats.reduce(
+          (max, day) =>
+            day.totalRevenue > (max?.totalRevenue || 0) ? day : max,
+          dailyStats[0],
+        ),
+      };
+
+      return {
+        success: true,
+        eventId: event.eventId,
+        eventName: event.name,
+        dateRange: {
+          startDate: startDate.toISOString().split('T')[0],
+          endDate: endDate.toISOString().split('T')[0],
+        },
+        summary,
+        dailyStats,
+      };
+    } catch (error) {
+      this.logger.error('Error fetching daily analytics:', error);
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      throw new BadRequestException(
+        `Failed to fetch daily analytics: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
+    }
+  }
+
+  /**
+   * Get revenue breakdown for an event
+   */
+  async getRevenueBreakdown(eventId: string, userId: string) {
+    try {
+      const event = await this.findOne(eventId);
+
+      // Verify ownership
+      if (event.partnerId !== userId) {
+        throw new BadRequestException(
+          'You do not have permission to view revenue details for this event',
+        );
+      }
+
+      // Get all transactions
+      const transactions = await this.ticketTransactionRepository.find({
+        where: { eventId: event.eventId },
+        order: { createdAt: 'ASC' },
+      });
+
+      const primarySales = transactions.filter(
+        (tx) => tx.transactionType === 'purchase',
+      );
+      const resales = transactions.filter(
+        (tx) => tx.transactionType === 'resell',
+      );
+
+      const primaryRevenue = primarySales.reduce(
+        (sum, tx) => sum + parseFloat(tx.price.toString()),
+        0,
+      );
+      const secondaryRevenue = resales.reduce(
+        (sum, tx) => sum + parseFloat(tx.price.toString()),
+        0,
+      );
+      const totalRevenue = primaryRevenue + secondaryRevenue;
+
+      // Calculate royalties
+      const royaltyPercentage = event.totalRoyaltyPercentage || 0;
+      const estimatedRoyalties = (totalRevenue * royaltyPercentage) / 100;
+
+      // Get escrow balance (actual royalties collected)
+      let escrowBalance = 0;
+      let royaltiesDistributed = 0;
+
+      if (event.blockchainEnabled && event.eventPda) {
+        try {
+          const eventPda = new PublicKey(event.eventPda);
+          escrowBalance = await this.solanaTicketService.getEscrowBalance(
+            eventPda,
+          );
+
+          // Check blockchain events for distributed royalties
+          const distributionEvents =
+            event.blockchainEvents?.filter(
+              (e) => e.eventType === 'royalty_distributed',
+            ) || [];
+
+          royaltiesDistributed = distributionEvents.reduce((sum, evt) => {
+            return sum + (evt.eventData?.totalAmount || 0);
+          }, 0);
+        } catch (error) {
+          this.logger.warn(`Failed to fetch blockchain royalty data: ${error}`);
+        }
+      }
+
+      // Price statistics
+      const allPrices = transactions.map((tx) => parseFloat(tx.price.toString()));
+      const avgPrice =
+        allPrices.length > 0
+          ? allPrices.reduce((sum, p) => sum + p, 0) / allPrices.length
+          : 0;
+      const minPrice = allPrices.length > 0 ? Math.min(...allPrices) : 0;
+      const maxPrice = allPrices.length > 0 ? Math.max(...allPrices) : 0;
+
+      return {
+        success: true,
+        eventId: event.eventId,
+        eventName: event.name,
+        revenue: {
+          totalRevenue,
+          primaryRevenue,
+          secondaryRevenue,
+          primaryPercentage:
+            totalRevenue > 0 ? (primaryRevenue / totalRevenue) * 100 : 0,
+          secondaryPercentage:
+            totalRevenue > 0 ? (secondaryRevenue / totalRevenue) * 100 : 0,
+        },
+        transactions: {
+          totalTransactions: transactions.length,
+          primarySales: primarySales.length,
+          resales: resales.length,
+        },
+        royalties: {
+          royaltyPercentage,
+          estimatedRoyalties,
+          royaltiesCollected: escrowBalance / 1_000_000,
+          royaltiesDistributed: royaltiesDistributed / 1_000_000,
+          pendingRoyalties: escrowBalance / 1_000_000,
+        },
+        priceStatistics: {
+          averagePrice: avgPrice,
+          minimumPrice: minPrice,
+          maximumPrice: maxPrice,
+          originalTicketPrice: event.ticketPrice,
+        },
+      };
+    } catch (error) {
+      this.logger.error('Error fetching revenue breakdown:', error);
+      if (
+        error instanceof NotFoundException ||
+        error instanceof BadRequestException
+      ) {
+        throw error;
+      }
+      throw new BadRequestException(
+        `Failed to fetch revenue breakdown: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
+    }
+  }
+
+  /**
+   * Get ticket distribution analytics
+   */
+  async getTicketDistribution(eventId: string) {
+    try {
+      const event = await this.findOne(eventId);
+
+      // Get all tickets from database
+      const tickets = await this.ticketRepository.find({
+        where: { eventId: event.eventId },
+      });
+
+      // Group by status
+      const byStatus = {
+        active: tickets.filter((t) => t.status === 'active').length,
+        used: tickets.filter((t) => t.status === 'used').length,
+        cancelled: tickets.filter((t) => t.status === 'cancelled').length,
+      };
+
+      // Group by resell count
+      const byResellCount = {
+        neverResold: tickets.filter((t) => t.resellCount === 0).length,
+        resoldOnce: tickets.filter((t) => t.resellCount === 1).length,
+        resoldTwice: tickets.filter((t) => t.resellCount === 2).length,
+        resoldThreePlus: tickets.filter((t) => t.resellCount >= 3).length,
+      };
+
+      // Price distribution
+      const prices = tickets.map((t) => parseFloat(t.currentPrice.toString()));
+      const avgPrice =
+        prices.length > 0 ? prices.reduce((sum, p) => sum + p, 0) / prices.length : 0;
+      const minPrice = prices.length > 0 ? Math.min(...prices) : 0;
+      const maxPrice = prices.length > 0 ? Math.max(...prices) : 0;
+
+      // Find most/least valuable tickets
+      const sortedByPrice = [...tickets].sort(
+        (a, b) =>
+          parseFloat(b.currentPrice.toString()) -
+          parseFloat(a.currentPrice.toString()),
+      );
+      const mostValuable = sortedByPrice.slice(0, 5).map((t) => ({
+        ticketId: t.ticketId,
+        currentPrice: parseFloat(t.currentPrice.toString()),
+        resellCount: t.resellCount,
+      }));
+      const leastValuable = sortedByPrice
+        .slice(-5)
+        .reverse()
+        .map((t) => ({
+          ticketId: t.ticketId,
+          currentPrice: parseFloat(t.currentPrice.toString()),
+          resellCount: t.resellCount,
+        }));
+
+      // Calculate price appreciation
+      const priceChanges = tickets.map((t) => {
+        const current = parseFloat(t.currentPrice.toString());
+        const original = parseFloat(t.originalPrice.toString());
+        return {
+          ticketId: t.ticketId,
+          appreciation: ((current - original) / original) * 100,
+        };
+      });
+      const avgAppreciation =
+        priceChanges.length > 0
+          ? priceChanges.reduce((sum, pc) => sum + pc.appreciation, 0) /
+            priceChanges.length
+          : 0;
+
+      return {
+        success: true,
+        eventId: event.eventId,
+        eventName: event.name,
+        summary: {
+          totalTickets: event.totalTickets,
+          ticketsSold: tickets.length,
+          ticketsRemaining: event.totalTickets - tickets.length,
+          soldPercentage:
+            event.totalTickets > 0
+              ? (tickets.length / event.totalTickets) * 100
+              : 0,
+        },
+        byStatus,
+        byResellCount,
+        priceDistribution: {
+          averagePrice: avgPrice,
+          minimumPrice: minPrice,
+          maximumPrice: maxPrice,
+          originalPrice: parseFloat(event.ticketPrice.toString()),
+          averageAppreciation: avgAppreciation,
+        },
+        topTickets: {
+          mostValuable,
+          leastValuable,
+        },
+      };
+    } catch (error) {
+      this.logger.error('Error fetching ticket distribution:', error);
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      throw new BadRequestException(
+        `Failed to fetch ticket distribution: ${error instanceof Error ? error.message : 'Unknown error'}`,
       );
     }
   }
