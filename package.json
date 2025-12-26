@@ -10,6 +10,8 @@
     "docs:export": "ts-node scripts/export-swagger.ts",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
+    "script:view": "ts-node scripts/view-blockchain-info.ts",
+    "script:view-db": "ts-node scripts/view-by-db-id.ts",
     "sst:init": "sst init",
     "start": "nest start",
     "start:debug": "nest start --debug --watch",
