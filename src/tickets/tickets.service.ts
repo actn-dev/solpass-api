@@ -17,7 +17,6 @@ import { QueryTicketsDto } from './dto/query-tickets.dto';
 import { solanaConfig } from '../config/solana.config';
 import type { ConfigType } from '@nestjs/config';
 import { Ticket, TicketStatus } from './entities/ticket.entity';
-import { usdToMicroUsdc, microUsdcToUsd } from '../blockchain/utils/currency.utils';
 import {
   TicketTransaction,
   TransactionType,
@@ -85,15 +84,15 @@ export class TicketsService {
       }
 
       // Call blockchain service to resell/purchase ticket
-      // Convert USD prices to micro-USDC for blockchain
+      // Send USD prices directly (no conversion)
       const { signature, ticketPda, resellCount } =
         await this.solanaTicketService.resellTicket({
           eventPda,
           ticketId: dto.ticketId,
           sellerId: dto.sellerId,
           buyerId: dto.buyerId,
-          price: usdToMicroUsdc(dto.newPrice),
-          originalPrice: usdToMicroUsdc(dto.originalPrice),
+          price: dto.newPrice,
+          originalPrice: dto.originalPrice,
         });
 
       // Wait for confirmation
@@ -185,6 +184,13 @@ export class TicketsService {
 
       await this.ticketRepository.save(ticket);
 
+      // Calculate profit for resales
+      const previousPrice = fromOwner ? ticket.currentPrice : undefined;
+      const profitAmount =
+        previousPrice && !isFirstPurchase
+          ? Math.max(0, dto.newPrice - previousPrice)
+          : 0;
+
       // Create transaction record
       const transaction = this.ticketTransactionRepository.create({
         ticketId: dto.ticketId,
@@ -192,6 +198,8 @@ export class TicketsService {
         fromOwner,
         toOwner: dto.buyerId,
         price: dto.newPrice,
+        previousPrice: previousPrice, // Price before this resale
+        profitAmount: profitAmount, // Calculated profit
         transactionType: isFirstPurchase
           ? TransactionType.PURCHASE
           : TransactionType.RESELL,

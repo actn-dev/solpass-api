@@ -40,6 +40,12 @@ export class TicketTransaction {
   @Column({ type: 'decimal', precision: 10, scale: 2 })
   price: number;
 
+  @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true })
+  previousPrice?: number;
+
+  @Column({ type: 'decimal', precision: 10, scale: 2, default: 0 })
+  profitAmount: number;
+
   @Column({
     type: 'enum',
     enum: TransactionType,

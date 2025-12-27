@@ -489,10 +489,7 @@ export class EventsService {
         const tickets =
           await this.solanaTicketService.getEventTickets(eventPda);
 
-        // Calculate total revenue from actual ticket prices
-        let totalRevenue = 0;
         stats.tickets = tickets.map((ticket) => {
-          totalRevenue += ticket.ticketPrice || 0;
           return {
             ticketId: ticket.ticketId,
             owner: ticket.owner,
@@ -503,16 +500,33 @@ export class EventsService {
           };
         });
 
-        stats.revenue = totalRevenue;
-        stats.averageTicketPrice =
-          tickets.length > 0 ? totalRevenue / tickets.length : 0;
-
-        // Get escrow balance (royalties collected)
+        // ✅ Get escrow balance as source of truth for distributable revenue
         const escrowBalance =
           await this.solanaTicketService.getEscrowBalance(eventPda);
+        
+        stats.revenue = escrowBalance; // Real distributable revenue
+        stats.totalRevenue = escrowBalance;
         stats.escrowBalance = escrowBalance;
         stats.escrowBalanceUSDC = escrowBalance;
-        stats.totalRoyaltiesCollected = stats.escrowBalanceUSDC;
+        stats.totalRoyaltiesCollected = escrowBalance;
+
+        // Calculate average based on tickets sold
+        stats.averageTicketPrice =
+          tickets.length > 0
+            ? tickets.reduce((sum, t) => sum + (t.ticketPrice || 0), 0) /
+              tickets.length
+            : 0;
+
+        // Calculate partner's share if this is the partner viewing
+        if (userId === event.partnerId && event.royaltyDistribution) {
+          // Sum all partner shares (or show first partner's share)
+          const totalPartnerPercentage = event.royaltyDistribution.reduce(
+            (sum, p) => sum + p.percentage,
+            0,
+          );
+          stats.partnerRevenue =
+            (escrowBalance * totalPartnerPercentage) / 100;
+        }
       } catch (error) {
         this.logger.warn(`Failed to fetch blockchain stats: ${error}`);
       }
@@ -1022,21 +1036,39 @@ export class EventsService {
         (tx) => tx.transactionType === 'resell',
       );
 
-      const primaryRevenue = primarySales.reduce(
+      // PRIMARY SALES = Volume only, NOT revenue/profit
+      const primarySalesVolume = primarySales.reduce(
         (sum, tx) => sum + parseFloat(tx.price.toString()),
         0,
       );
-      const secondaryRevenue = resales.reduce(
-        (sum, tx) => sum + parseFloat(tx.price.toString()),
-        0,
-      );
-      const totalRevenue = primaryRevenue + secondaryRevenue;
+      const primarySalesCount = primarySales.length;
 
-      // Calculate royalties
+      // RESALE = Transaction volume (for breakdown)
+      const resaleVolume = resales.reduce(
+        (sum, tx) => sum + parseFloat(tx.price.toString()),
+        0,
+      );
+
+      // PROFIT from resales (calculated from previousPrice if available)
+      const resaleProfit = resales.reduce((sum, tx) => {
+        if (tx.profitAmount) {
+          return sum + parseFloat(tx.profitAmount.toString());
+        }
+        // Fallback: calculate from previousPrice if available
+        if (tx.previousPrice) {
+          const profit =
+            parseFloat(tx.price.toString()) -
+            parseFloat(tx.previousPrice.toString());
+          return sum + Math.max(0, profit);
+        }
+        return sum;
+      }, 0);
+
+      // Calculate royalties (for estimation only)
       const royaltyPercentage = event.totalRoyaltyPercentage || 0;
-      const estimatedRoyalties = (totalRevenue * royaltyPercentage) / 100;
 
-      // Get escrow balance (actual royalties collected)
+      // ✅ SOURCE OF TRUTH: Get escrow balance (actual distributable revenue)
+      let actualDistributableRevenue = 0;
       let escrowBalance = 0;
       let royaltiesDistributed = 0;
 
@@ -1046,6 +1078,7 @@ export class EventsService {
           escrowBalance = await this.solanaTicketService.getEscrowBalance(
             eventPda,
           );
+          actualDistributableRevenue = escrowBalance;
 
           // Check blockchain events for distributed royalties
           const distributionEvents =
@@ -1061,6 +1094,23 @@ export class EventsService {
         }
       }
 
+      // Calculate partner shares from escrow balance
+      // Partners split 100% of distributable revenue based on their relative percentages
+      const totalPartnerPercentage = royaltyPercentage; // Sum of all partner percentages
+      const partnerShares = (event.royaltyDistribution || []).map((partner) => ({
+        partyName: partner.partyName,
+        walletAddress: partner.walletAddress,
+        percentage: partner.percentage,
+        // Each partner gets their proportion of the total distributable revenue
+        estimatedShare: totalPartnerPercentage > 0 
+          ? (actualDistributableRevenue * partner.percentage) / totalPartnerPercentage
+          : 0,
+      }));
+
+      // Platform gets nothing from distributable revenue (partners split 100%)
+      const platformPercentage = 0;
+      const platformShare = 0;
+
       // Price statistics
       const allPrices = transactions.map((tx) => parseFloat(tx.price.toString()));
       const avgPrice =
@@ -1075,25 +1125,37 @@ export class EventsService {
         eventId: event.eventId,
         eventName: event.name,
         revenue: {
-          totalRevenue,
-          primaryRevenue,
-          secondaryRevenue,
-          primaryPercentage:
-            totalRevenue > 0 ? (primaryRevenue / totalRevenue) * 100 : 0,
-          secondaryPercentage:
-            totalRevenue > 0 ? (secondaryRevenue / totalRevenue) * 100 : 0,
+          // SOURCE OF TRUTH: Distributable revenue from blockchain escrow
+          totalDistributableRevenue: actualDistributableRevenue,
+          escrowBalance: actualDistributableRevenue,
+
+          // Breakdown from DB (for analytics only, not actual revenue)
+          primarySalesVolume: primarySalesVolume,
+          primarySalesCount: primarySalesCount,
+          resaleVolume: resaleVolume,
+          resaleProfit: resaleProfit,
+
+          // Legacy fields (deprecated but kept for backwards compatibility)
+          totalRevenue: actualDistributableRevenue,
+          primaryRevenue: 0, // Primary sales are not revenue
+          secondaryRevenue: actualDistributableRevenue,
+          primaryPercentage: 0,
+          secondaryPercentage: 100,
         },
         transactions: {
           totalTransactions: transactions.length,
           primarySales: primarySales.length,
           resales: resales.length,
         },
+        partnerShares: partnerShares,
+        platformShare: platformShare,
         royalties: {
           royaltyPercentage,
-          estimatedRoyalties,
+          escrowBalance: actualDistributableRevenue,
           royaltiesCollected: escrowBalance,
           royaltiesDistributed: royaltiesDistributed,
           pendingRoyalties: escrowBalance,
+          pendingDistribution: actualDistributableRevenue - royaltiesDistributed,
         },
         priceStatistics: {
           averagePrice: avgPrice,
