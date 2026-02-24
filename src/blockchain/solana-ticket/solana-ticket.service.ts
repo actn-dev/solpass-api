@@ -236,6 +236,67 @@ export class SolanaTicketService {
   }
 
   /**
+   * Approve royalty distribution (partner signs to approve multi-sig)
+   * The signerKeypair must be one of the party wallets registered in the event.
+   */
+  async approveDistribution(params: {
+    eventPda: PublicKey;
+    signerKeypair: Keypair;
+  }): Promise<{ signature: string; approvalPda: PublicKey }> {
+    try {
+      this.logger.log(
+        `Approving distribution for event: ${params.eventPda.toBase58()} by ${params.signerKeypair.publicKey.toBase58()}`,
+      );
+
+      const [approvalPda] = this.pdaService.deriveApprovalPDA(
+        this.programId,
+        params.eventPda,
+      );
+
+      // @ts-ignore
+      const signature = await this.program.methods
+        .approveDistribution()
+        .accounts({
+          eventAccount: params.eventPda,
+          approvalAccount: approvalPda,
+          signer: params.signerKeypair.publicKey,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([params.signerKeypair])
+        .rpc();
+
+      this.logger.log(
+        `Distribution approved by ${params.signerKeypair.publicKey.toBase58()}: ${signature}`,
+      );
+
+      return { signature, approvalPda };
+    } catch (error) {
+      this.logger.error('Error approving distribution:', error);
+      throw new Error(
+        `Failed to approve distribution: ${
+          error instanceof Error ? error.message : 'Unknown error'
+        }`,
+      );
+    }
+  }
+
+  /**
+   * Get distribution approval account data
+   */
+  async getApprovalAccount(eventPda: PublicKey): Promise<any> {
+    try {
+      const [approvalPda] = this.pdaService.deriveApprovalPDA(
+        this.programId,
+        eventPda,
+      );
+      // @ts-ignore
+      return await this.program.account.distributionApproval.fetch(approvalPda);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * Distribute royalties to party wallets
    */
   async distributeRoyalty(params: {
@@ -339,12 +400,19 @@ export class SolanaTicketService {
         `Distributing to ${remainingAccountMetas.length} parties`,
       );
 
+      // Derive approval PDA
+      const [approvalPda] = this.pdaService.deriveApprovalPDA(
+        this.programId,
+        params.eventPda,
+      );
+
       // Call distributeRoyalty instruction
       // @ts-ignore
       const signature = await this.program.methods
         .distributeRoyalty()
         .accounts({
           eventAccount: params.eventPda,
+          approvalAccount: approvalPda,
           royaltyEscrow: royaltyEscrowPda,
           authority: params.authority,
           escrowUsdcAccount: escrowUsdcAccount,

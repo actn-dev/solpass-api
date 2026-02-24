@@ -167,6 +167,42 @@ export class EventsController {
     return this.eventsService.distributeRoyalty(id, dto, req.user.userId);
   }
 
+  @Get(':id/approval-status')
+  @UseGuards(JwtOrApiKeyGuard, EventOwnerGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get multi-sig approval status for royalty distribution' })
+  @ApiParam({ name: 'id', description: 'Event UUID' })
+  @ApiResponse({ status: 200, description: 'Approval status retrieved' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 404, description: 'Event not found' })
+  async getApprovalStatus(@Param('id') id: string) {
+    return this.eventsService.getApprovalStatus(id);
+  }
+
+  @Post(':id/approve-distribution')
+  @UseGuards(JwtOrApiKeyGuard, EventOwnerGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Submit a partner approval for royalty distribution (multi-sig)',
+    description:
+      'The signing partner provides their base58-encoded private key. ' +
+      'Once the configured threshold of approvals is reached, distributeRoyalty can be called.',
+  })
+  @ApiParam({ name: 'id', description: 'Event UUID' })
+  @ApiResponse({ status: 200, description: 'Approval submitted successfully' })
+  @ApiResponse({ status: 400, description: 'Bad request - invalid key or wallet not a party' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 403, description: 'Forbidden - not event owner' })
+  @ApiResponse({ status: 404, description: 'Event not found' })
+  async approveDistribution(
+    @Param('id') id: string,
+    @Body('signerPrivateKey') signerPrivateKey: string,
+    @Request() req,
+  ) {
+    return this.eventsService.approveDistribution(id, signerPrivateKey, req.user.userId);
+  }
+
   @Get(':id/escrow')
   @UseGuards(JwtAuthGuard, EventOwnerGuard)
   @ApiBearerAuth()

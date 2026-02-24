@@ -8,7 +8,8 @@ import {
 } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { PublicKey } from '@solana/web3.js';
+import { PublicKey, Keypair } from '@solana/web3.js';
+import { bs58 } from '@coral-xyz/anchor/dist/cjs/utils/bytes';
 import { User } from 'src/users/entities/user.entity';
 import { Repository } from 'typeorm';
 import { PdaService } from '../blockchain/services/pda.service';
@@ -553,6 +554,164 @@ export class EventsService {
     }
 
     return stats;
+  }
+
+  /**
+   * Get multi-sig approval status for royalty distribution
+   */
+  async getApprovalStatus(eventId: string) {
+    try {
+      const event = await this.findOne(eventId);
+
+      if (!event.blockchainEnabled || !event.eventPda) {
+        return {
+          blockchainEnabled: false,
+          message: 'Event not initialized on blockchain',
+        };
+      }
+
+      const eventPda = new PublicKey(event.eventPda);
+
+      // Fetch on-chain event + approval accounts in parallel
+      const [eventData, approvalData, escrowBalance] = await Promise.all([
+        this.solanaTicketService.getEventAccount(eventPda),
+        this.solanaTicketService.getApprovalAccount(eventPda),
+        this.solanaTicketService.getEscrowBalance(eventPda),
+      ]);
+
+      const threshold = event.distributionThreshold ?? 1;
+      const approvedPubkeys: string[] =
+        approvalData?.approvals?.map((pk: any) => pk.toBase58()) ?? [];
+      const royaltyDistributed =
+        eventData?.royaltyDistributed ?? false;
+      const executed = approvalData?.executed ?? false;
+      const canDistribute =
+        approvedPubkeys.length >= threshold && !royaltyDistributed && !executed;
+
+      // Enrich with partner names + approval status
+      const parties = (event.royaltyDistribution ?? []).map((p) => ({
+        partyName: p.partyName,
+        walletAddress: p.walletAddress,
+        percentage: p.percentage,
+        approved: approvedPubkeys.includes(p.walletAddress),
+      }));
+
+      return {
+        blockchainEnabled: true,
+        threshold,
+        totalParties: parties.length,
+        approvedCount: approvedPubkeys.length,
+        approvedPubkeys,
+        canDistribute,
+        royaltyDistributed,
+        executed,
+        escrowBalance,
+        parties,
+      };
+    } catch (error) {
+      this.logger.error('Error fetching approval status:', error);
+      throw new BadRequestException(
+        `Failed to fetch approval status: ${
+          error instanceof Error ? error.message : 'Unknown error'
+        }`,
+      );
+    }
+  }
+
+  /**
+   * Approve royalty distribution for an event (multi-sig)
+   * The caller provides the signer's private key (base58). In production this
+   * would be replaced by a proper wallet-signing flow on the partner's side.
+   */
+  async approveDistribution(
+    eventId: string,
+    signerPrivateKeyBase58: string,
+    userId: string,
+  ) {
+    try {
+      this.logger.log(`Approving distribution for event: ${eventId}`);
+
+      const event = await this.findOne(eventId);
+
+      if (!event.blockchainEnabled || !event.eventPda) {
+        throw new BadRequestException('Event not initialized on blockchain');
+      }
+
+      // Reconstruct signer keypair from provided private key
+      let signerKeypair: Keypair;
+      try {
+        const secretKey = bs58.decode(signerPrivateKeyBase58);
+        signerKeypair = Keypair.fromSecretKey(secretKey);
+      } catch {
+        throw new BadRequestException('Invalid signer private key (expected base58-encoded secret key)');
+      }
+
+      const signerPublicKey = signerKeypair.publicKey.toBase58();
+
+      // Verify the signer is one of the registered party wallets
+      const isParty = event.royaltyDistribution?.some(
+        (p) => p.walletAddress === signerPublicKey,
+      );
+      if (!isParty) {
+        throw new BadRequestException(
+          `Wallet ${signerPublicKey} is not a registered royalty partner for this event`,
+        );
+      }
+
+      const eventPda = new PublicKey(event.eventPda);
+
+      const { signature, approvalPda } =
+        await this.solanaTicketService.approveDistribution({
+          eventPda,
+          signerKeypair,
+        });
+
+      const confirmed = await this.solanaService.waitForConfirmation(signature);
+      if (!confirmed) {
+        throw new InternalServerErrorException('Transaction confirmation timeout');
+      }
+
+      // Fetch updated approval state
+      const approvalData =
+        await this.solanaTicketService.getApprovalAccount(eventPda);
+
+      // Log it
+      const blockchainEvents = event.blockchainEvents || [];
+      blockchainEvents.push({
+        eventType: 'distribution_approved',
+        txHash: signature,
+        walletAddress: signerPublicKey,
+        eventData: {
+          approvalPda: approvalPda.toBase58(),
+          totalApprovals: approvalData?.approvals?.length ?? '?',
+          executed: approvalData?.executed ?? false,
+        },
+        timestamp: Date.now(),
+      });
+      if (!event.id) throw new InternalServerErrorException('Event ID is missing');
+      await this.eventRepository.update(event.id, { blockchainEvents });
+
+      return {
+        success: true,
+        transactionSignature: signature,
+        signerPublicKey,
+        totalApprovals: approvalData?.approvals?.length ?? null,
+        executed: approvalData?.executed ?? false,
+      };
+    } catch (error) {
+      this.logger.error('Error approving distribution:', error);
+      if (
+        error instanceof BadRequestException ||
+        error instanceof InternalServerErrorException
+      ) {
+        throw error;
+      }
+      throw new BadRequestException(
+        `Failed to approve distribution: ${
+          error instanceof Error ? error.message : 'Unknown error'
+        }`,
+      );
+    }
   }
 
   /**

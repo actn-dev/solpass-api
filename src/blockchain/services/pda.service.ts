@@ -46,4 +46,18 @@ export class PdaService {
       programId,
     );
   }
+
+  /**
+   * Derive distribution approval PDA
+   * Seeds: [APPROVAL_STATE, eventPDA]
+   */
+  deriveApprovalPDA(
+    programId: PublicKey,
+    eventPDA: PublicKey,
+  ): [PublicKey, number] {
+    return PublicKey.findProgramAddressSync(
+      [Buffer.from('APPROVAL_STATE'), eventPDA.toBuffer()],
+      programId,
+    );
+  }
 }
