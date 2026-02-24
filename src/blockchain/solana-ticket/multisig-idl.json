@@ -1,0 +1,418 @@
+{
+    "version": "0.1.0",
+    "name": "ticket_master",
+    "constants": [
+        {
+            "name": "EVENT_TAG",
+            "type": "bytes",
+            "value": "[69, 86, 69, 78, 84, 95, 83, 84, 65, 84, 69]"
+        },
+        {
+            "name": "TICKET_TAG",
+            "type": "bytes",
+            "value": "[84, 73, 67, 75, 69, 84, 95, 83, 84, 65, 84, 69]"
+        },
+        {
+            "name": "ROYALTY_ESCROW_TAG",
+            "type": "bytes",
+            "value": "[82, 79, 89, 65, 76, 84, 89, 95, 69, 83, 67, 82, 79, 87]"
+        },
+        {
+            "name": "APPROVAL_TAG",
+            "type": "bytes",
+            "value": "[65, 80, 80, 82, 79, 86, 65, 76, 95, 83, 84, 65, 84, 69]"
+        },
+        {
+            "name": "USDC_MINT",
+            "type": "publicKey",
+            "value": "solana_program :: pubkey ! (\"4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU\")"
+        },
+        {
+            "name": "PRICE_SCALE",
+            "type": "u64",
+            "value": "1_000_000"
+        }
+    ],
+    "instructions": [
+        {
+            "name": "createEvent",
+            "accounts": [
+                {
+                    "name": "eventAccount",
+                    "isMut": true,
+                    "isSigner": false
+                },
+                {
+                    "name": "authority",
+                    "isMut": true,
+                    "isSigner": true
+                },
+                {
+                    "name": "systemProgram",
+                    "isMut": false,
+                    "isSigner": false
+                }
+            ],
+            "args": [
+                {
+                    "name": "eventId",
+                    "type": "string"
+                },
+                {
+                    "name": "name",
+                    "type": "string"
+                },
+                {
+                    "name": "royalty",
+                    "type": "string"
+                },
+                {
+                    "name": "partyWallets",
+                    "type": {
+                        "vec": "publicKey"
+                    }
+                },
+                {
+                    "name": "distributionThreshold",
+                    "type": "u8"
+                }
+            ]
+        },
+        {
+            "name": "resellTicket",
+            "accounts": [
+                {
+                    "name": "ticketAccount",
+                    "isMut": true,
+                    "isSigner": false
+                },
+                {
+                    "name": "eventAccount",
+                    "isMut": true,
+                    "isSigner": false
+                },
+                {
+                    "name": "royaltyEscrow",
+                    "isMut": true,
+                    "isSigner": false
+                },
+                {
+                    "name": "buyerAccount",
+                    "isMut": true,
+                    "isSigner": true
+                },
+                {
+                    "name": "sellerAccount",
+                    "isMut": true,
+                    "isSigner": false
+                },
+                {
+                    "name": "buyerUsdcAccount",
+                    "isMut": true,
+                    "isSigner": false
+                },
+                {
+                    "name": "escrowUsdcAccount",
+                    "isMut": true,
+                    "isSigner": false
+                },
+                {
+                    "name": "usdcMint",
+                    "isMut": false,
+                    "isSigner": false
+                },
+                {
+                    "name": "tokenProgram",
+                    "isMut": false,
+                    "isSigner": false
+                },
+                {
+                    "name": "associatedTokenProgram",
+                    "isMut": false,
+                    "isSigner": false
+                },
+                {
+                    "name": "systemProgram",
+                    "isMut": false,
+                    "isSigner": false
+                }
+            ],
+            "args": [
+                {
+                    "name": "ticketId",
+                    "type": "string"
+                },
+                {
+                    "name": "seller",
+                    "type": "string"
+                },
+                {
+                    "name": "buyer",
+                    "type": "string"
+                },
+                {
+                    "name": "newPrice",
+                    "type": "u16"
+                },
+                {
+                    "name": "originalPrice",
+                    "type": "u16"
+                }
+            ]
+        },
+        {
+            "name": "approveDistribution",
+            "accounts": [
+                {
+                    "name": "eventAccount",
+                    "isMut": true,
+                    "isSigner": false
+                },
+                {
+                    "name": "approvalAccount",
+                    "isMut": true,
+                    "isSigner": false
+                },
+                {
+                    "name": "signer",
+                    "isMut": true,
+                    "isSigner": true
+                },
+                {
+                    "name": "systemProgram",
+                    "isMut": false,
+                    "isSigner": false
+                }
+            ],
+            "args": []
+        },
+        {
+            "name": "distributeRoyalty",
+            "accounts": [
+                {
+                    "name": "eventAccount",
+                    "isMut": true,
+                    "isSigner": false
+                },
+                {
+                    "name": "approvalAccount",
+                    "isMut": true,
+                    "isSigner": false
+                },
+                {
+                    "name": "royaltyEscrow",
+                    "isMut": true,
+                    "isSigner": false
+                },
+                {
+                    "name": "authority",
+                    "isMut": true,
+                    "isSigner": true
+                },
+                {
+                    "name": "escrowUsdcAccount",
+                    "isMut": true,
+                    "isSigner": false
+                },
+                {
+                    "name": "usdcMint",
+                    "isMut": false,
+                    "isSigner": false
+                },
+                {
+                    "name": "tokenProgram",
+                    "isMut": false,
+                    "isSigner": false
+                },
+                {
+                    "name": "systemProgram",
+                    "isMut": false,
+                    "isSigner": false
+                }
+            ],
+            "args": []
+        }
+    ],
+    "accounts": [
+        {
+            "name": "EventAccount",
+            "type": {
+                "kind": "struct",
+                "fields": [
+                    {
+                        "name": "authority",
+                        "type": "publicKey"
+                    },
+                    {
+                        "name": "eventId",
+                        "type": "string"
+                    },
+                    {
+                        "name": "name",
+                        "type": "string"
+                    },
+                    {
+                        "name": "royalty",
+                        "type": "string"
+                    },
+                    {
+                        "name": "partyWallets",
+                        "type": {
+                            "vec": "publicKey"
+                        }
+                    },
+                    {
+                        "name": "distributionThreshold",
+                        "type": "u8"
+                    },
+                    {
+                        "name": "ticketsSold",
+                        "type": "u16"
+                    },
+                    {
+                        "name": "isActive",
+                        "type": "bool"
+                    },
+                    {
+                        "name": "royaltyDistributed",
+                        "type": "bool"
+                    }
+                ]
+            }
+        },
+        {
+            "name": "TicketAccount",
+            "type": {
+                "kind": "struct",
+                "fields": [
+                    {
+                        "name": "event",
+                        "type": "publicKey"
+                    },
+                    {
+                        "name": "owner",
+                        "type": "string"
+                    },
+                    {
+                        "name": "seller",
+                        "type": "string"
+                    },
+                    {
+                        "name": "ticketId",
+                        "type": "string"
+                    },
+                    {
+                        "name": "purchaseDate",
+                        "type": "i64"
+                    },
+                    {
+                        "name": "ticketPrice",
+                        "type": "u16"
+                    },
+                    {
+                        "name": "resellCount",
+                        "type": "u8"
+                    }
+                ]
+            }
+        },
+        {
+            "name": "RoyaltyEscrow",
+            "type": {
+                "kind": "struct",
+                "fields": [
+                    {
+                        "name": "event",
+                        "type": "publicKey"
+                    },
+                    {
+                        "name": "usdcAmount",
+                        "type": "u64"
+                    }
+                ]
+            }
+        },
+        {
+            "name": "DistributionApproval",
+            "type": {
+                "kind": "struct",
+                "fields": [
+                    {
+                        "name": "event",
+                        "type": "publicKey"
+                    },
+                    {
+                        "name": "approvals",
+                        "type": {
+                            "vec": "publicKey"
+                        }
+                    },
+                    {
+                        "name": "executed",
+                        "type": "bool"
+                    },
+                    {
+                        "name": "proposedAt",
+                        "type": "i64"
+                    },
+                    {
+                        "name": "executedAt",
+                        "type": "i64"
+                    }
+                ]
+            }
+        }
+    ],
+    "errors": [
+        {
+            "code": 6000,
+            "name": "Unauthorized",
+            "msg": "You are not authorized to perform this action."
+        },
+        {
+            "code": 6001,
+            "name": "EventNotActive",
+            "msg": "Event is not active"
+        },
+        {
+            "code": 6002,
+            "name": "MathOverflow",
+            "msg": "Math operation overflow"
+        },
+        {
+            "code": 6003,
+            "name": "TicketNotAvailable",
+            "msg": "Ticket not available"
+        },
+        {
+            "code": 6004,
+            "name": "InvalidPartyCount",
+            "msg": "Invalid number of party accounts"
+        },
+        {
+            "code": 6005,
+            "name": "RoyaltiesAlreadyDistributed",
+            "msg": "Royalties already distributed"
+        },
+        {
+            "code": 6006,
+            "name": "InsufficientApprovals",
+            "msg": "Insufficient approvals for distribution"
+        },
+        {
+            "code": 6007,
+            "name": "DuplicateApproval",
+            "msg": "Approval already exists from this signer"
+        },
+        {
+            "code": 6008,
+            "name": "DistributionExecuted",
+            "msg": "Distribution already executed"
+        },
+        {
+            "code": 6009,
+            "name": "InvalidPartyWallets",
+            "msg": "Invalid party wallet configuration"
+        }
+    ]
+}

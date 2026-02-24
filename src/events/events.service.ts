@@ -101,6 +101,7 @@ export class EventsService {
         ticketPrice: dto.ticketPrice,
         totalRoyaltyPercentage: totalPercentage,
         royaltyDistribution: dto.royaltyDistribution,
+        distributionThreshold: dto.distributionThreshold,
         partnerId,
         blockchainEnabled: false,
         blockchainEvents: [],
@@ -160,12 +161,31 @@ export class EventsService {
         .map((p) => p.percentage.toString())
         .join(',');
 
+      // Build party wallet public keys from royalty distribution
+      const partyWallets = event.royaltyDistribution.map(
+        (p) => new PublicKey(p.walletAddress),
+      );
+
+      if (!event.distributionThreshold || event.distributionThreshold < 1) {
+        throw new BadRequestException(
+          'Event must have a valid distributionThreshold (>= 1)',
+        );
+      }
+
+      if (event.distributionThreshold > partyWallets.length) {
+        throw new BadRequestException(
+          `distributionThreshold (${event.distributionThreshold}) cannot exceed the number of parties (${partyWallets.length})`,
+        );
+      }
+
       // Initialize on blockchain
       const { signature, eventPda, eventKeypair } =
         await this.solanaTicketService.createEvent({
           eventId: event.eventId,
           name: event.name,
           royalty: royaltyString,
+          partyWallets,
+          distributionThreshold: event.distributionThreshold,
         });
 
       // Wait for confirmation

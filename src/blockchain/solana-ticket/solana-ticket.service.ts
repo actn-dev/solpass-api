@@ -9,7 +9,7 @@ import { Connection, Keypair, PublicKey, SystemProgram } from '@solana/web3.js';
 import { PdaService } from '../../blockchain/services/pda.service';
 import { SolanaService } from '../../blockchain/services/solana.service';
 import { TokenService } from '../../blockchain/services/token.service';
-import idl from './ticket-idl.json';
+import idl from './multisig-idl.json';
 import {
   SERVER_WALLET,
   SOLANA_CONNECTION,
@@ -68,6 +68,8 @@ export class SolanaTicketService {
     eventId: string;
     name: string;
     royalty: string;
+    partyWallets: PublicKey[];
+    distributionThreshold: number;
   }): Promise<{
     signature: string;
     eventPda: PublicKey;
@@ -98,10 +100,16 @@ export class SolanaTicketService {
         );
       }
 
-      // Call createEvent instruction (only 3 params: eventId, name, royalty)
+      // Call createEvent instruction (5 params: eventId, name, royalty, partyWallets, distributionThreshold)
       // @ts-ignore
       const signature = await this.program.methods
-        .createEvent(params.eventId, params.name, params.royalty)
+        .createEvent(
+          params.eventId,
+          params.name,
+          params.royalty,
+          params.partyWallets,
+          params.distributionThreshold,
+        )
         .accounts({
           eventAccount: eventPda,
           authority: this.serverWallet.publicKey,

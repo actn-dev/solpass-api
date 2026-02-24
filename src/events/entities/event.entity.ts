@@ -14,7 +14,7 @@ import { User } from '../../users/entities/user.entity';
 export interface RoyaltyPartner {
   partyName: string;
   percentage: number;
-  walletAddress?: string;
+  walletAddress: string; // Required: Solana wallet address for royalty distribution
 }
 
 @Entity('events')
@@ -71,6 +71,10 @@ export class Event {
 
   @Column({ type: 'jsonb', nullable: true })
   royaltyDistribution: RoyaltyPartner[];
+
+  // Multi-sig distribution threshold (how many party approvals needed)
+  @Column({ type: 'int', nullable: true })
+  distributionThreshold: number;
 
   // Blockchain event history (audit trail)
   @Column({ type: 'jsonb', nullable: true })

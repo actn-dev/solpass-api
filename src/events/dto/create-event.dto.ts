@@ -1,7 +1,6 @@
 import {
   IsString,
   Length,
-  IsOptional,
   IsNumber,
   IsDateString,
   Min,
@@ -11,7 +10,7 @@ import {
   ArrayMinSize,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty } from '@nestjs/swagger';
 import { RoyaltyPartner } from '../entities/event.entity';
 
 export class RoyaltyPartnerDto implements RoyaltyPartner {
@@ -25,13 +24,12 @@ export class RoyaltyPartnerDto implements RoyaltyPartner {
   @Max(100)
   percentage: number;
 
-  @ApiPropertyOptional({
+  @ApiProperty({
     example: 'So1ana...wallet',
-    description: 'Solana wallet address',
+    description: 'Solana wallet address (required for royalty distribution)',
   })
   @IsString()
-  @IsOptional()
-  walletAddress?: string;
+  walletAddress: string;
 }
 
 export class CreateEventDto {
@@ -101,4 +99,13 @@ export class CreateEventDto {
   @Type(() => RoyaltyPartnerDto)
   @ArrayMinSize(1)
   royaltyDistribution: RoyaltyPartnerDto[];
+
+  @ApiProperty({
+    example: 2,
+    description:
+      'Number of party approvals required to distribute royalties (multi-sig threshold)',
+  })
+  @IsNumber()
+  @Min(1)
+  distributionThreshold: number;
 }
